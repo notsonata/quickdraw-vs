@@ -100,6 +100,7 @@ def main() -> int:
     with RawTerminal():
         clf = classifier.create_classifier()
         logging.info("classifier type: %s", clf.__class__.__name__)
+        tts_kokoro.prime()
         gate = SpeechGate()
         last_classify_time = 0.0
         last_frame = None
@@ -152,8 +153,12 @@ def main() -> int:
                 if settings.DEBUG_PRINT_JSON:
                     print(json.dumps(decision, indent=2))
                 if decision["should_speak"]:
-                    line = responses.make_spoken_line(decision["top1"], decision["confidence"])
-                    logging.info("spoken guess: %s", line)
+                    if decision.get("speech_kind") == "taunt":
+                        line = responses.make_low_confidence_taunt()
+                        logging.info("spoken taunt: %s", line)
+                    else:
+                        line = responses.make_spoken_line(decision["top1"], decision["confidence"])
+                        logging.info("spoken guess: %s", line)
                     print(line)
                     tts_kokoro.speak(line)
             except KeyboardInterrupt:

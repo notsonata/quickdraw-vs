@@ -25,3 +25,27 @@ Adjust preprocessing so small sketches inside the configured Canva crop are cent
 - **Files**: `draw_game/preprocess.py`, `tests/test_preprocess.py`
 - **Context**: Live TFLite predictions stayed low-confidence and unrelated because the full Canva crop was being resized directly to 28x28, making drawings too small for the classifier.
 - **Status**: Done
+
+### [High] Add Click-Based Crop Calibration
+
+Add a calibration tool that lets the user click the four visible Canva corners on a live screenshot and writes the enclosing rectangle into `draw_game/.env`.
+
+- **Files**: `draw_game/tools/`, `tests/`, `README.md`
+- **Context**: Manual crop coordinates are error-prone and directly affect recognition quality. The existing runtime still consumes an axis-aligned rectangle, so calibration should write `CANVAS_X`, `CANVAS_Y`, `CANVAS_W`, and `CANVAS_H`.
+- **Status**: Done
+
+### [Low] Expand Snarky AI Responses
+
+Add more variety to the low-confidence taunts to keep the game engaging and frustrating for the artist.
+
+- **Files**: `draw_game/responses.py`
+- **Context**: The AI should have a wider range of snarky insults when it can't figure out what the human is drawing.
+- **Status**: Done
+
+### [High] Use Latest-After-Finish TTS Handoff
+
+Speak accepted guesses immediately when idle, never interrupt a line already in progress, and keep only the latest pending guess to speak next after the current line finishes.
+
+- **Files**: `draw_game/tts_kokoro.py`, `tests/test_classifier.py`, `docs/architecture.md`, `docs/devlog.md`
+- **Context**: The game should react immediately when possible without talking over itself, and stale pending guesses should be dropped in favor of the most recent detection.
+- **Status**: Done

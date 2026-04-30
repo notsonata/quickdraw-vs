@@ -25,7 +25,7 @@ def synthesize_and_play(text: str, voice: str, speed: float, device: str) -> Non
     import sounddevice as sd
     from kokoro import KPipeline
 
-    from draw_game.tts_kokoro import resolve_output_device
+    from draw_game.tts_kokoro import prepare_playback_audio, prepare_stream_audio, resolve_output_device
 
     print("Loading Kokoro pipeline...")
     pipeline = KPipeline(lang_code="a")
@@ -41,16 +41,30 @@ def synthesize_and_play(text: str, voice: str, speed: float, device: str) -> Non
             audio = item[-1]
         if hasattr(audio, "detach"):
             audio = audio.detach().cpu().numpy()
-        print(f"Playing {getattr(audio, 'shape', 'unknown')} samples...")
-        sd.play(audio, samplerate=24000, device=output_device)
-        sd.wait()
+        playback_audio, samplerate = prepare_playback_audio(
+            sd, audio, device=output_device, source_rate=24000
+        )
+        stream_audio = prepare_stream_audio(sd, playback_audio, device=output_device, samplerate=samplerate)
+        print(
+            f"Playing {getattr(stream_audio, 'shape', 'unknown')} samples "
+            f"at {samplerate} Hz..."
+        )
+        with sd.OutputStream(
+            samplerate=samplerate,
+            device=output_device,
+            channels=stream_audio.shape[1],
+            dtype="float32",
+            blocksize=0,
+            latency="high",
+        ) as stream:
+            stream.write(stream_audio)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="List audio devices and test Kokoro playback.")
     parser.add_argument("--speak", action="store_true", help="Synthesize and play a short test phrase.")
     parser.add_argument("--text", default="Kokoro audio test.", help="Text to speak when using --speak.")
-    parser.add_argument("--voice", default="af_heart", help="Kokoro voice.")
+    parser.add_argument("--voice", default="am_adam", help="Kokoro voice.")
     parser.add_argument("--speed", type=float, default=1.0, help="Kokoro speech speed.")
     parser.add_argument(
         "--device",

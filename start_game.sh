@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="/Users/angelo/Documents/New project 2"
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
 MODEL_PATH="$PROJECT_DIR/draw_game/models/quickdraw-345-tflite/quickdraw_model.tflite"
 LABELS_PATH="$PROJECT_DIR/draw_game/models/quickdraw-345-tflite/labels.txt"

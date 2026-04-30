@@ -12,3 +12,6 @@
 - Recreated `.venv` with Python 3.11, installed TensorFlow, loaded the real TFLite model, and verified a prediction smoke test plus the full unit suite.
 - Installed Kokoro TTS and sounddevice, verified `KPipeline`, and updated the TTS wrapper for Kokoro `KPipeline.Result` audio extraction.
 - Fixed QuickDraw preprocessing so detected strokes are cropped, padded, centered, and scaled into the 28x28 model input instead of shrinking the full Canva crop; verified with focused preprocessing coverage, full unit tests, and syntax compilation.
+- Added a click-based calibration tool that captures a full-screen screenshot, lets the user click four Canva corners, and writes the enclosing crop rectangle into `draw_game/.env`.
+- Expanded the snarky low-confidence AI response list in `draw_game/responses.py` with more insults to improve game personality.
+- Updated TTS dispatch so accepted guesses start immediately when idle, active speech is never interrupted, and only the latest pending guess is kept for playback after the current line finishes; added regression coverage for both prompt dispatch and latest-after-finish handoff.

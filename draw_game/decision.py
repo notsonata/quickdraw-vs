@@ -16,8 +16,10 @@ class SpeechGate:
         self.round_start_time = 0.0
         self.last_top1_label: str | None = None
         self.last_label_since = 0.0
+        self.low_confidence_since = 0.0
         self.last_spoken_label: str | None = None
         self.last_speech_time = -1_000_000.0
+        self.last_taunt_time = -1_000_000.0
         self.ai_guesses_this_round = 0
 
     def start_round(self) -> None:
@@ -26,8 +28,10 @@ class SpeechGate:
         self.round_start_time = now
         self.last_top1_label = None
         self.last_label_since = now
+        self.low_confidence_since = now
         self.last_spoken_label = None
         self.last_speech_time = -1_000_000.0
+        self.last_taunt_time = -1_000_000.0
         self.ai_guesses_this_round = 0
 
     def end_round(self) -> None:
@@ -43,13 +47,33 @@ class SpeechGate:
             self.last_top1_label = top1
             self.last_label_since = now
         stable_for_sec = max(0.0, now - self.last_label_since)
+        if confidence < settings.AI_MIN_CONFIDENCE:
+            if self.low_confidence_since == 0.0:
+                self.low_confidence_since = now
+        else:
+            self.low_confidence_since = now
+        low_confidence_for_sec = max(0.0, now - self.low_confidence_since)
 
         reason = "stable_confident_guess"
         should_speak = True
+        speech_kind = "guess"
 
         if not self.round_active:
             reason = "round_not_active"
             should_speak = False
+        elif getattr(settings, "AI_SPEAK_EVERY_SCAN", False):
+            if confidence < settings.AI_MIN_CONFIDENCE:
+                if (
+                    low_confidence_for_sec >= getattr(settings, "AI_LOW_CONFIDENCE_TAUNT_SEC", 2.5)
+                    and now - self.last_taunt_time >= getattr(settings, "AI_TAUNT_COOLDOWN_SEC", 5.0)
+                ):
+                    reason = "low_confidence_taunt"
+                    speech_kind = "taunt"
+                else:
+                    reason = "low_confidence"
+                    should_speak = False
+            else:
+                reason = "speak_every_scan"
         elif now - self.round_start_time < settings.AI_FIRST_GUESS_DELAY_SEC:
             reason = "first_guess_delay"
             should_speak = False
@@ -70,9 +94,12 @@ class SpeechGate:
             should_speak = False
 
         if should_speak:
-            self.last_spoken_label = top1
-            self.last_speech_time = now
-            self.ai_guesses_this_round += 1
+            if speech_kind == "taunt":
+                self.last_taunt_time = now
+            else:
+                self.last_spoken_label = top1
+                self.last_speech_time = now
+                self.ai_guesses_this_round += 1
 
         return {
             "round_active": self.round_active,
@@ -80,7 +107,9 @@ class SpeechGate:
             "confidence": round(confidence, 4),
             "top3": top3,
             "stable_ms": int(round(stable_for_sec * 1000)),
+            "low_confidence_ms": int(round(low_confidence_for_sec * 1000)),
             "should_speak": should_speak,
             "reason": reason,
+            "speech_kind": speech_kind if should_speak else "none",
             "ai_guesses_this_round": self.ai_guesses_this_round,
         }

@@ -22,7 +22,7 @@ Canva screen crop
 - `draw_game/tools/download_quickdraw_tflite.py`: Downloads the QuickDraw 345-class TFLite model files from Hugging Face into `draw_game/models/quickdraw-345-tflite/`.
 - `draw_game/decision.py`: Maintains per-round speech gate state.
 - `draw_game/responses.py`: Maps labels and confidence tiers to preset spoken phrases.
-- `draw_game/tts_kokoro.py`: Non-fatal, non-overlapping TTS wrapper with Kokoro-first behavior.
+- `draw_game/tts_kokoro.py`: Non-fatal TTS wrapper with Kokoro-first behavior that starts speaking immediately when idle, never interrupts a current line, and replaces any pending line with the latest guess.
 - `draw_game/main.py`: Keyboard-controlled capture/classify/speak loop.
 
 ## Runtime Notes

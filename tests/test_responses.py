@@ -1,6 +1,6 @@
 import unittest
 
-from draw_game.responses import make_spoken_line
+from draw_game.responses import make_low_confidence_taunt, make_spoken_line
 
 
 class ResponseTests(unittest.TestCase):
@@ -18,9 +18,32 @@ class ResponseTests(unittest.TestCase):
         self.assertIn(
             line,
             {
-                "Maybe cat.",
-                "I am guessing cat.",
-                "Could be cat.",
-                "My current guess is cat.",
+                "cat.",
+                "I think it's cat.",
+            },
+        )
+
+    def test_make_spoken_line_uses_short_high_confidence_templates(self):
+        line = make_spoken_line("soccer_ball", 0.9)
+
+        self.assertIn(
+            line,
+            {
+                "soccer ball.",
+                "It's soccer ball.",
+            },
+        )
+
+    def test_make_low_confidence_taunt_is_short_and_mild(self):
+        line = make_low_confidence_taunt()
+
+        self.assertIn(
+            line,
+            {
+                "Draw better.",
+                "This is rough.",
+                "Help me out here.",
+                "That drawing is brutal.",
+                "Give me something clearer.",
             },
         )

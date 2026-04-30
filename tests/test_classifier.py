@@ -1,6 +1,9 @@
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from threading import Event, Lock, Thread
+from time import monotonic, sleep
+from unittest.mock import Mock
 
 import numpy as np
 
@@ -10,6 +13,7 @@ from draw_game.classifier import (
     TFLiteClassifier,
     create_classifier,
 )
+from draw_game.tts_kokoro import TTSWorker, prepare_playback_audio, prepare_stream_audio, resample_audio
 
 
 class FakeInterpreter:
@@ -124,3 +128,111 @@ class ClassifierTests(unittest.TestCase):
 
             self.assertIsInstance(classifier, StubClassifier)
             self.assertIn(PYTHON_314_TFLITE_WARNING, output.getvalue())
+
+    def test_resample_audio_expands_to_target_rate(self):
+        source = np.linspace(-1.0, 1.0, num=240, dtype=np.float32)
+        resampled = resample_audio(source, source_rate=24000, target_rate=48000)
+
+        self.assertEqual(resampled.dtype, np.float32)
+        self.assertGreater(len(resampled), len(source))
+
+    def test_prepare_playback_audio_uses_device_default_samplerate(self):
+        class FakeSoundDevice:
+            default = type("Default", (), {"device": (-1, 0)})()
+
+            @staticmethod
+            def query_devices(device=None):
+                if device is None:
+                    return []
+                return {"default_samplerate": 48000}
+
+        source = np.linspace(-1.0, 1.0, num=240, dtype=np.float32)
+        playback_audio, samplerate = prepare_playback_audio(
+            FakeSoundDevice,
+            source,
+            device=0,
+            source_rate=24000,
+        )
+
+        self.assertEqual(samplerate, 48000)
+        self.assertGreater(len(playback_audio), len(source))
+
+    def test_prepare_stream_audio_adds_padding_and_stereo(self):
+        class FakeSoundDevice:
+            @staticmethod
+            def query_devices(device=None):
+                return {"max_output_channels": 2}
+
+        source = np.ones(100, dtype=np.float32)
+        stream_audio = prepare_stream_audio(
+            FakeSoundDevice,
+            source,
+            device=0,
+            samplerate=48000,
+            padding_ms=100,
+        )
+
+        self.assertEqual(stream_audio.dtype, np.float32)
+        self.assertEqual(stream_audio.shape[1], 2)
+        self.assertGreater(stream_audio.shape[0], len(source))
+        self.assertTrue(np.allclose(stream_audio[0], 0.0))
+
+    def test_tts_worker_speak_dispatches_immediately(self):
+        worker = TTSWorker()
+        worker._speak_now = Mock()
+
+        worker.speak("cat")
+
+        deadline = monotonic() + 1.0
+        while monotonic() < deadline:
+            if worker._speak_now.call_count == 1:
+                break
+            sleep(0.01)
+
+        worker._speak_now.assert_called_once_with("cat")
+
+    def test_tts_worker_keeps_only_latest_pending_guess_while_speaking(self):
+        worker = TTSWorker()
+        started = Event()
+        release_first = Event()
+        call_lock = Lock()
+        calls: list[tuple[str, str]] = []
+
+        def fake_speak_now(text: str) -> None:
+            with call_lock:
+                calls.append(("start", text))
+            if text == "cat":
+                started.set()
+                release_first.wait(timeout=1.0)
+            with call_lock:
+                calls.append(("end", text))
+
+        worker._speak_now = fake_speak_now
+
+        first = Thread(target=worker.speak, args=("cat",))
+        first.start()
+        self.assertTrue(started.wait(timeout=1.0))
+
+        worker.speak("dog")
+        worker.speak("bird")
+        release_first.set()
+        first.join(timeout=1.0)
+
+        deadline = monotonic() + 1.0
+        while monotonic() < deadline:
+            with call_lock:
+                snapshot = list(calls)
+            if ("end", "bird") in snapshot:
+                break
+            sleep(0.01)
+
+        with call_lock:
+            self.assertEqual(
+                calls,
+                [
+                    ("start", "cat"),
+                    ("end", "cat"),
+                    ("start", "bird"),
+                    ("end", "bird"),
+                ],
+            )

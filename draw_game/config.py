@@ -62,6 +62,9 @@ class Settings:
     AI_STABLE_FOR_SEC: float = _get("AI_STABLE_FOR_SEC", 0.5, float)
     AI_SPEECH_COOLDOWN_SEC: float = _get("AI_SPEECH_COOLDOWN_SEC", 2.5, float)
     MAX_AI_GUESSES_PER_ROUND: int = _get("MAX_AI_GUESSES_PER_ROUND", 3, int)
+    AI_SPEAK_EVERY_SCAN: bool = _get("AI_SPEAK_EVERY_SCAN", False, _bool)
+    AI_LOW_CONFIDENCE_TAUNT_SEC: float = _get("AI_LOW_CONFIDENCE_TAUNT_SEC", 2.5, float)
+    AI_TAUNT_COOLDOWN_SEC: float = _get("AI_TAUNT_COOLDOWN_SEC", 5.0, float)
     MODEL_BACKEND: str = _get("MODEL_BACKEND", "stub", _backend)
     MODEL_PATH: Path = _get(
         "MODEL_PATH",
@@ -82,7 +85,7 @@ class Settings:
     DEBUG_SAVE_FRAMES: bool = _get("DEBUG_SAVE_FRAMES", False, _bool)
     DEBUG_PRINT_JSON: bool = _get("DEBUG_PRINT_JSON", True, _bool)
     CLASSIFIER_INPUT_SIZE: int = _get("CLASSIFIER_INPUT_SIZE", 28, int)
-    KOKORO_VOICE: str = _get("KOKORO_VOICE", "af_heart", str)
+    KOKORO_VOICE: str = _get("KOKORO_VOICE", "am_adam", str)
     KOKORO_SPEED: float = _get("KOKORO_SPEED", 1.0, float)
     KOKORO_AUDIO_DEVICE: str = _get("KOKORO_AUDIO_DEVICE", "", str)
 

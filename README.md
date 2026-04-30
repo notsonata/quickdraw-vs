@@ -16,7 +16,7 @@ Google Meet is only the social layer. This app does not integrate with Google Me
 ## Installation
 
 ```bash
-cd /Users/angelo/Documents/New\ project\ 2
+cd quickdraw-vs
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -29,7 +29,7 @@ Use Python 3.11 for the real TFLite QuickDraw model. Python 3.14 is not currentl
 Recommended macOS setup:
 
 ```bash
-cd "/Users/angelo/Documents/New project 2"
+cd quickdraw-vs
 deactivate 2>/dev/null || true
 rm -rf .venv
 python3.11 -m venv .venv
@@ -95,11 +95,24 @@ TTS_ENABLED=true
 
 The crop rectangle should cover only the visible Canva drawing area in the screen share. Use `s` while the app is running to save raw and preprocessed debug images into `draw_game/logs/`.
 
+You can also calibrate the crop by clicking the four visible Canva corners:
+
+```bash
+python draw_game/tools/calibrate_canvas_crop.py
+```
+
+Calibration controls:
+
+- Click the four corners in any order.
+- Press `r` to reset the points.
+- Press `Enter` to save the crop into `draw_game/.env`.
+- Press `q` or `Esc` to cancel.
+
 ## Run
 
 ```bash
-cd /Users/angelo/Documents/New\ project\ 2/draw_game
-python3 main.py
+cd quickdraw-vs
+python3 -m draw_game.main
 ```
 
 Controls:
@@ -170,7 +183,7 @@ My guess is bottlecap.
 Install dependencies and download the Hugging Face model files:
 
 ```bash
-cd "/Users/angelo/Documents/New project 2"
+cd quickdraw-vs
 .venv/bin/python -m pip install -r requirements.txt
 .venv/bin/python draw_game/tools/download_quickdraw_tflite.py
 ```
