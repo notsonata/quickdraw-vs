@@ -63,6 +63,7 @@ def save_debug_crop(frame: np.ndarray | None = None, directory: Path | None = No
 def save_debug_artifacts(
     raw_frame: np.ndarray | None,
     preview_image: np.ndarray | None,
+    profile_previews: dict[str, np.ndarray] | None = None,
     directory: Path | None = None,
 ) -> list[Path]:
     """Save raw crop, 28x28 preview, and enlarged model preview for inspection."""
@@ -89,5 +90,12 @@ def save_debug_artifacts(
         enlarged_path = target_dir / f"debug-preview-280x280-{stamp}.png"
         cv2.imwrite(str(enlarged_path), enlarged)
         written.append(enlarged_path)
+
+    if profile_previews:
+        for profile_name, profile_preview in profile_previews.items():
+            enlarged = cv2.resize(profile_preview, (280, 280), interpolation=cv2.INTER_NEAREST)
+            profile_path = target_dir / f"debug-preview-280x280-{profile_name}-{stamp}.png"
+            cv2.imwrite(str(profile_path), enlarged)
+            written.append(profile_path)
 
     return written

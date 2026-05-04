@@ -50,6 +50,21 @@ def _backend(value: str) -> str:
     return "stub"
 
 
+def _preprocess_profile(value: str) -> str:
+    profile = value.strip().lower()
+    allowed = {
+        "current",
+        "dilate_before_resize",
+        "dilate_after_resize",
+        "antialias_grayscale",
+        "more_margin",
+    }
+    if profile in allowed:
+        return profile
+    print(f"Invalid PREPROCESS_PROFILE={value!r}; using 'current'.")
+    return "current"
+
+
 @dataclass(frozen=True)
 class Settings:
     CANVAS_X: int = _get("CANVAS_X", 0, int)
@@ -81,6 +96,21 @@ class Settings:
     MODEL_INPUT_CHANNELS: int = _get("MODEL_INPUT_CHANNELS", 1, int)
     MODEL_BACKGROUND_VALUE: float = _get("MODEL_BACKGROUND_VALUE", 1.0, float)
     MODEL_STROKE_VALUE: float = _get("MODEL_STROKE_VALUE", 0.0, float)
+    PREPROCESS_PROFILE: str = _get("PREPROCESS_PROFILE", "current", _preprocess_profile)
+    PREPROCESS_COMPARE_PROFILES: bool = _get("PREPROCESS_COMPARE_PROFILES", False, _bool)
+    PREPROCESS_INTERMEDIATE_SIZE: int = _get("PREPROCESS_INTERMEDIATE_SIZE", 64, int)
+    PREPROCESS_PADDING_RATIO: float = _get("PREPROCESS_PADDING_RATIO", 0.22, float)
+    PREPROCESS_DILATE_BEFORE_RESIZE: bool = _get(
+        "PREPROCESS_DILATE_BEFORE_RESIZE", False, _bool
+    )
+    PREPROCESS_DILATE_AFTER_RESIZE: bool = _get(
+        "PREPROCESS_DILATE_AFTER_RESIZE", False, _bool
+    )
+    PREPROCESS_DILATE_KERNEL: int = _get("PREPROCESS_DILATE_KERNEL", 2, int)
+    PREPROCESS_DILATE_ITERATIONS: int = _get("PREPROCESS_DILATE_ITERATIONS", 1, int)
+    PREPROCESS_USE_GRAYSCALE_ANTIALIAS: bool = _get(
+        "PREPROCESS_USE_GRAYSCALE_ANTIALIAS", True, _bool
+    )
     TTS_ENABLED: bool = _get("TTS_ENABLED", True, _bool)
     DEBUG_SAVE_FRAMES: bool = _get("DEBUG_SAVE_FRAMES", False, _bool)
     DEBUG_PRINT_JSON: bool = _get("DEBUG_PRINT_JSON", True, _bool)

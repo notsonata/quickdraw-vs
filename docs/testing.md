@@ -7,7 +7,7 @@ Automated tests cover pure, local behavior:
 - Stub classifier JSON contract.
 - TFLite label loading and missing-model fallback.
 - TFLite inference smoke testing when downloaded model files are present.
-- Preprocessing output shape and normalization.
+- Preprocessing output shape, normalization, and profile-specific behavior.
 - Preprocessing polarity for TFLite: white background, black strokes.
 - Speech gate timing and limiting rules.
 - Preset response generation.

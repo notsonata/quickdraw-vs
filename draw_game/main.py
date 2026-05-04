@@ -27,6 +27,17 @@ except ImportError:  # pragma: no cover - supports python main.py from draw_game
 LOG_DIR = Path(__file__).resolve().parent / "logs"
 
 
+def _run_profile_comparison(frame, clf) -> tuple[dict[str, list[list[str | float]]], dict[str, object]]:
+    comparison: dict[str, list[list[str | float]]] = {}
+    previews: dict[str, object] = {}
+    for profile_name in preprocess.PREPROCESS_PROFILES:
+        model_input, preview = preprocess.preprocess_for_classifier_with_profile(frame, profile_name)
+        result = clf.predict(model_input)
+        comparison[profile_name] = result["top3"]
+        previews[profile_name] = preview
+    return comparison, previews
+
+
 def setup_logging() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     log_path = LOG_DIR / f"{datetime.now().strftime('%Y-%m-%d')}.log"
@@ -123,7 +134,10 @@ def main() -> int:
                 try:
                     last_frame = capture.capture_canvas_crop()
                     _model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
-                    paths = capture.save_debug_artifacts(last_frame, last_preview)
+                    profile_previews = None
+                    if settings.PREPROCESS_COMPARE_PROFILES:
+                        _comparison, profile_previews = _run_profile_comparison(last_frame, clf)
+                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
                     logging.info("saved debug artifacts: %s", paths)
                     print("Saved debug artifacts:")
                     for path in paths:
@@ -145,10 +159,14 @@ def main() -> int:
             try:
                 last_frame = capture.capture_canvas_crop()
                 model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
-                if settings.DEBUG_SAVE_FRAMES:
-                    paths = capture.save_debug_artifacts(last_frame, last_preview)
-                    logging.info("saved debug artifacts: %s", paths)
                 result = clf.predict(model_input)
+                profile_previews = None
+                if settings.PREPROCESS_COMPARE_PROFILES:
+                    comparison, profile_previews = _run_profile_comparison(last_frame, clf)
+                    print(json.dumps(comparison, indent=2))
+                if settings.DEBUG_SAVE_FRAMES or settings.PREPROCESS_COMPARE_PROFILES:
+                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
+                    logging.info("saved debug artifacts: %s", paths)
                 decision = gate.update(result)
                 if settings.DEBUG_PRINT_JSON:
                     print(json.dumps(decision, indent=2))

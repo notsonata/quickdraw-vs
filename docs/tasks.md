@@ -49,3 +49,11 @@ Speak accepted guesses immediately when idle, never interrupt a line already in 
 - **Files**: `draw_game/tts_kokoro.py`, `tests/test_classifier.py`, `docs/architecture.md`, `docs/devlog.md`
 - **Context**: The game should react immediately when possible without talking over itself, and stale pending guesses should be dropped in favor of the most recent detection.
 - **Status**: Done
+
+### [High] Add QuickDraw Preprocessing Profiles
+
+Add multiple preprocessing profiles plus a comparison mode so the 28x28 QuickDraw rendering can be evaluated on the same captured frame without changing model loading, classifier JSON shape, gate behavior, or TTS.
+
+- **Files**: `draw_game/config.py`, `draw_game/preprocess.py`, `draw_game/main.py`, `draw_game/capture.py`, `tests/test_preprocess.py`, `docs/`
+- **Context**: Tall thin sketches such as `door` can become too jagged or too thin after downscaling, which pushes predictions toward unrelated labels. The app needs profile-level experimentation focused on the final 28x28 model input.
+- **Status**: Done
