@@ -1,10 +1,12 @@
 import unittest
 
+import cv2
 import numpy as np
 
 from draw_game.preprocess import (
     preprocess_for_classifier,
     preprocess_for_classifier_with_profile,
+    preprocess_for_web_canvas,
 )
 
 
@@ -95,3 +97,17 @@ class PreprocessTests(unittest.TestCase):
         self.assertGreater(current_rows.size, 0)
         self.assertGreater(margin_rows.size, 0)
         self.assertLess(margin_rows.size, current_rows.size)
+
+    def test_web_canvas_preprocess_keeps_drawing_position_instead_of_recentering(self):
+        frame = np.full((224, 224, 3), 255, dtype=np.uint8)
+        frame[20:180, 18:34] = 0
+
+        web_tensor, web_preview = preprocess_for_web_canvas(frame, input_size=28)
+        expected = cv2.resize(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), (28, 28), interpolation=cv2.INTER_AREA)
+
+        self.assertEqual(web_tensor.shape, (1, 28, 28, 1))
+        self.assertEqual(web_preview.shape, (28, 28))
+        self.assertLess(float(web_tensor.min()), 0.2)
+        self.assertGreater(float(web_tensor[:, :3, :3, :].mean()), 0.9)
+        self.assertLess(int(web_preview[:, :8].min()), 10)
+        self.assertTrue(np.array_equal(web_preview, expected))

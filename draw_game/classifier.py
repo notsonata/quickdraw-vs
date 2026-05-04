@@ -55,17 +55,22 @@ def _format_prediction(labels: list[str], probabilities: Iterable[float]) -> dic
     if probs.ndim != 1 or probs.size == 0:
         raise ValueError("Classifier probabilities must be a non-empty vector.")
 
-    count = min(3, probs.size, len(labels))
+    count = min(5, probs.size, len(labels))
     top_indices = np.argsort(probs)[::-1][:count]
-    top3 = [[labels[i], round(float(probs[i]), 4)] for i in top_indices]
+    top5 = [[labels[i], round(float(probs[i]), 4)] for i in top_indices]
+    top3 = top5[:3]
     while len(top3) < 3:
         fallback_label = FALLBACK_LABELS[len(top3) % len(FALLBACK_LABELS)]
         top3.append([fallback_label, 0.0])
+    while len(top5) < 5:
+        fallback_label = FALLBACK_LABELS[len(top5) % len(FALLBACK_LABELS)]
+        top5.append([fallback_label, 0.0])
 
     return {
         "top1": top3[0][0],
         "confidence": top3[0][1],
         "top3": top3,
+        "top5": top5,
     }
 
 
@@ -90,6 +95,13 @@ class StubClassifier:
             "top1": chosen[0],
             "confidence": confidence,
             "top3": [[chosen[0], confidence], [chosen[1], second], [chosen[2], third]],
+            "top5": [
+                [chosen[0], confidence],
+                [chosen[1], second],
+                [chosen[2], third],
+                [FALLBACK_LABELS[3], 0.0],
+                [FALLBACK_LABELS[4], 0.0],
+            ],
         }
 
 

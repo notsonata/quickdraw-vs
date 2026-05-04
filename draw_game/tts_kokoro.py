@@ -15,20 +15,26 @@ class TTSWorker:
     def __init__(self) -> None:
         self._lock = threading.Condition()
         self._pending_text: str | None = None
+        self._pending_kind = "guess"
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._started = False
         self._pyttsx3 = None
         self._kokoro_pipeline = None
         self._output_stream = None
         self._output_stream_key: tuple[object | None, int, int] | None = None
+        self._current_kind = "idle"
+        self._interrupt_current = False
 
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, *, interrupt: bool = False, speech_kind: str = "guess") -> None:
         if not settings.TTS_ENABLED:
             print(f"[TTS disabled] {text}")
             return
         self._ensure_started()
         with self._lock:
+            if interrupt and self._current_kind == "taunt":
+                self._interrupt_current = True
             self._pending_text = text
+            self._pending_kind = speech_kind
             self._lock.notify()
 
     def prime(self) -> None:
@@ -54,11 +60,23 @@ class TTSWorker:
                 while self._pending_text is None:
                     self._lock.wait()
                 text = self._pending_text
+                speech_kind = self._pending_kind
                 self._pending_text = None
+                self._pending_kind = "guess"
+                self._current_kind = speech_kind
+                self._interrupt_current = False
             try:
                 self._speak_now(text)
             except Exception as exc:
                 print(f"[TTS fallback] {text} (reason: {exc})")
+            finally:
+                with self._lock:
+                    self._current_kind = "idle"
+                    self._interrupt_current = False
+
+    def should_interrupt_current(self) -> bool:
+        with self._lock:
+            return self._interrupt_current
 
     def _speak_now(self, text: str) -> None:
         if self._try_kokoro(text):
@@ -76,8 +94,12 @@ class TTSWorker:
             # the common generator interface and degrades if playback is absent.
             audio_chunks = pipeline(text, voice=settings.KOKORO_VOICE, speed=settings.KOKORO_SPEED)
             for item in audio_chunks:
+                if self.should_interrupt_current():
+                    return True
                 audio = self._extract_audio(item)
                 self._play_audio(audio)
+                if self.should_interrupt_current():
+                    return True
             return True
         except Exception as exc:
             print(f"[Kokoro unavailable] {exc}")
@@ -177,8 +199,8 @@ class TTSWorker:
 _WORKER = TTSWorker()
 
 
-def speak(text: str) -> None:
-    _WORKER.speak(text)
+def speak(text: str, *, interrupt: bool = False, speech_kind: str = "guess") -> None:
+    _WORKER.speak(text, interrupt=interrupt, speech_kind=speech_kind)
 
 
 def prime() -> None:

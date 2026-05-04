@@ -5,13 +5,14 @@ import logging
 import select
 import sys
 import termios
+import threading
 import time
 import tty
 from datetime import datetime
 from pathlib import Path
 
 try:
-    from . import capture, classifier, preprocess, responses, tts_kokoro
+    from . import capture, classifier, preprocess, responses, tts_kokoro, web_canvas
     from .config import settings
     from .decision import SpeechGate
 except ImportError:  # pragma: no cover - supports python main.py from draw_game/
@@ -20,6 +21,7 @@ except ImportError:  # pragma: no cover - supports python main.py from draw_game
     import preprocess
     import responses
     import tts_kokoro
+    import web_canvas
     from config import settings
     from decision import SpeechGate
 
@@ -30,6 +32,12 @@ LOG_DIR = Path(__file__).resolve().parent / "logs"
 def _run_profile_comparison(frame, clf) -> tuple[dict[str, list[list[str | float]]], dict[str, object]]:
     comparison: dict[str, list[list[str | float]]] = {}
     previews: dict[str, object] = {}
+    if settings.CANVAS_SOURCE == "web":
+        model_input, preview = preprocess.preprocess_for_web_canvas(frame)
+        result = clf.predict(model_input)
+        comparison["web_canvas"] = result["top3"]
+        previews["web_canvas"] = preview
+        return comparison, previews
     for profile_name in preprocess.PREPROCESS_PROFILES:
         model_input, preview = preprocess.preprocess_for_classifier_with_profile(frame, profile_name)
         result = clf.predict(model_input)
@@ -84,11 +92,17 @@ def print_controls() -> None:
     )
     if settings.CANVAS_W <= 0 or settings.CANVAS_H <= 0:
         print("Warning: crop dimensions are invalid. CANVAS_W and CANVAS_H must be positive.")
+    if settings.CANVAS_SOURCE == "web":
+        print(
+            f"Web canvas mode: open http://localhost:{settings.WEB_CANVAS_PORT} "
+            "or your Cloudflare Tunnel URL on the phone."
+        )
 
 
 def log_startup_config() -> None:
     logging.info(
-        "startup config: crop=(%s,%s,%s,%s) interval=%s backend=%s model=%s labels=%s tts=%s",
+        "startup config: source=%s crop=(%s,%s,%s,%s) interval=%s backend=%s model=%s labels=%s tts=%s",
+        settings.CANVAS_SOURCE,
         settings.CANVAS_X,
         settings.CANVAS_Y,
         settings.CANVAS_W,
@@ -101,6 +115,23 @@ def log_startup_config() -> None:
     )
 
 
+def _start_web_canvas_server() -> tuple[web_canvas.SharedCanvasState, object, threading.Thread]:
+    image_store = web_canvas.SharedCanvasState()
+    server = web_canvas.create_server(
+        settings.WEB_CANVAS_HOST,
+        settings.WEB_CANVAS_PORT,
+        image_store,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    logging.info(
+        "web canvas server listening on %s:%s",
+        settings.WEB_CANVAS_HOST,
+        server.server_port,
+    )
+    return image_store, server, thread
+
+
 def main() -> int:
     setup_logging()
     log_startup_config()
@@ -108,7 +139,11 @@ def main() -> int:
     print("Loading classifier. Wait for 'Ready' before starting a round.")
 
     running = True
+    image_store = None
+    web_server = None
     with RawTerminal():
+        if settings.CANVAS_SOURCE == "web":
+            image_store, web_server, _web_thread = _start_web_canvas_server()
         clf = classifier.create_classifier()
         logging.info("classifier type: %s", clf.__class__.__name__)
         tts_kokoro.prime()
@@ -132,8 +167,14 @@ def main() -> int:
                 print("Round ended.")
             elif key == "s":
                 try:
-                    last_frame = capture.capture_canvas_crop()
-                    _model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
+                    if settings.CANVAS_SOURCE == "web":
+                        last_frame = image_store.get_latest_frame()
+                    else:
+                        last_frame = capture.capture_canvas_crop()
+                    if settings.CANVAS_SOURCE == "web":
+                        _model_input, last_preview = preprocess.preprocess_for_web_canvas(last_frame)
+                    else:
+                        _model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                     profile_previews = None
                     if settings.PREPROCESS_COMPARE_PROFILES:
                         _comparison, profile_previews = _run_profile_comparison(last_frame, clf)
@@ -157,8 +198,14 @@ def main() -> int:
             last_classify_time = now
 
             try:
-                last_frame = capture.capture_canvas_crop()
-                model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
+                if settings.CANVAS_SOURCE == "web":
+                    last_frame = image_store.get_latest_frame()
+                else:
+                    last_frame = capture.capture_canvas_crop()
+                if settings.CANVAS_SOURCE == "web":
+                    model_input, last_preview = preprocess.preprocess_for_web_canvas(last_frame)
+                else:
+                    model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                 result = clf.predict(model_input)
                 profile_previews = None
                 if settings.PREPROCESS_COMPARE_PROFILES:
@@ -175,10 +222,20 @@ def main() -> int:
                         line = responses.make_low_confidence_taunt()
                         logging.info("spoken taunt: %s", line)
                     else:
-                        line = responses.make_spoken_line(decision["top1"], decision["confidence"])
+                        line = responses.make_spoken_line(
+                            decision["spoken_label"],
+                            decision["confidence"],
+                            alternate_label=decision.get("alternate_label"),
+                        )
                         logging.info("spoken guess: %s", line)
                     print(line)
-                    tts_kokoro.speak(line)
+                    tts_kokoro.speak(
+                        line,
+                        interrupt=bool(decision.get("interrupt_current")),
+                        speech_kind=str(decision.get("speech_kind", "guess")),
+                    )
+            except web_canvas.NoCanvasFrameError:
+                time.sleep(0.05)
             except KeyboardInterrupt:
                 running = False
             except Exception as exc:
@@ -186,6 +243,9 @@ def main() -> int:
                 print(f"Loop error: {exc}")
                 time.sleep(0.25)
 
+    if web_server is not None:
+        web_server.shutdown()
+        web_server.server_close()
     logging.info("shutdown")
     print("Exited.")
     return 0

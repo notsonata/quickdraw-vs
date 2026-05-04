@@ -14,6 +14,13 @@ MEDIUM_CONFIDENCE_LINES = [
     "Is it {label}?"
 ]
 
+HEDGED_LINES = [
+    "{label} or {alternate}.",
+    "Maybe {label} or {alternate}.",
+    "{label}... or {alternate}.",
+    "Is it {label} or {alternate}?",
+]
+
 LOW_CONFIDENCE_TAUNTS = [
     "Draw better.",
     "This is rough.",
@@ -30,8 +37,11 @@ LOW_CONFIDENCE_TAUNTS = [
 ]
 
 
-def make_spoken_line(label: str, confidence: float) -> str:
+def make_spoken_line(label: str, confidence: float, alternate_label: str | None = None) -> str:
     clean_label = label.replace("_", " ").strip()
+    clean_alternate = (alternate_label or "").replace("_", " ").strip()
+    if clean_alternate and clean_alternate != clean_label:
+        return random.choice(HEDGED_LINES).format(label=clean_label, alternate=clean_alternate)
     templates = HIGH_CONFIDENCE_LINES if confidence >= 0.85 else MEDIUM_CONFIDENCE_LINES
     return random.choice(templates).format(label=clean_label)
 

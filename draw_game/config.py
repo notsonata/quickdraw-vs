@@ -50,6 +50,14 @@ def _backend(value: str) -> str:
     return "stub"
 
 
+def _canvas_source(value: str) -> str:
+    source = value.strip().lower()
+    if source in {"screen", "web"}:
+        return source
+    print(f"Invalid CANVAS_SOURCE={value!r}; using 'screen'.")
+    return "screen"
+
+
 def _preprocess_profile(value: str) -> str:
     profile = value.strip().lower()
     allowed = {
@@ -67,10 +75,13 @@ def _preprocess_profile(value: str) -> str:
 
 @dataclass(frozen=True)
 class Settings:
+    CANVAS_SOURCE: str = _get("CANVAS_SOURCE", "screen", _canvas_source)
     CANVAS_X: int = _get("CANVAS_X", 0, int)
     CANVAS_Y: int = _get("CANVAS_Y", 0, int)
     CANVAS_W: int = _get("CANVAS_W", 800, int)
     CANVAS_H: int = _get("CANVAS_H", 600, int)
+    WEB_CANVAS_HOST: str = _get("WEB_CANVAS_HOST", "0.0.0.0", str)
+    WEB_CANVAS_PORT: int = _get("WEB_CANVAS_PORT", 8765, int)
     CLASSIFY_INTERVAL_SEC: float = _get("CLASSIFY_INTERVAL_SEC", 0.25, float)
     AI_FIRST_GUESS_DELAY_SEC: float = _get("AI_FIRST_GUESS_DELAY_SEC", 1.0, float)
     AI_MIN_CONFIDENCE: float = _get("AI_MIN_CONFIDENCE", 0.65, float)

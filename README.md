@@ -1,6 +1,6 @@
 # Humans vs AI Draw Guessing MVP
 
-Local Python MVP for a "Humans vs AI Draw Guessing" game. A human draws on a Canva canvas shared in Google Meet, while this app watches a configured screen crop, classifies the sketch, gates early AI guesses, and speaks preset guesses through local TTS.
+Local Python MVP for a "Humans vs AI Draw Guessing" game. A human can either draw on a Canva canvas shared in Google Meet or use a built-in phone-friendly web canvas, while this app classifies the sketch, gates early AI guesses, and speaks preset guesses through local TTS.
 
 Google Meet is only the social layer. This app does not integrate with Google Meet APIs.
 
@@ -10,7 +10,7 @@ Google Meet is only the social layer. This app does not integrate with Google Me
 - The target classifier model, `zarqankhn/quickdraw-345-tflite`, is not installed automatically.
 - TFLite is the default real-model backend when configured; ONNX support remains available.
 - If no supported model exists, the app uses `StubClassifier`.
-- No speech recognition, winner detection, Canva detection, web UI, or database.
+- No speech recognition, winner detection, Canva detection, or database.
 - Kokoro support is best-effort because local package and playback APIs vary; console and optional `pyttsx3` fallback keep the loop running.
 
 ## Installation
@@ -72,7 +72,14 @@ LABELS_PATH=draw_game/models/quickdraw-345-tflite/labels.txt \
 python -m draw_game.main
 ```
 
-## Configure the Screen Crop
+## Configure the Input Source
+
+Two input modes are available:
+
+- `CANVAS_SOURCE=screen`: capture a fixed rectangle from Canva or another shared app
+- `CANVAS_SOURCE=web`: serve the built-in single-user mobile canvas
+
+### Screen Crop Mode
 
 Copy the example config and edit it:
 
@@ -107,6 +114,27 @@ Calibration controls:
 - Press `r` to reset the points.
 - Press `Enter` to save the crop into `draw_game/.env`.
 - Press `q` or `Esc` to cancel.
+
+### Web Canvas Mode
+
+Set these values in `draw_game/.env`:
+
+```env
+CANVAS_SOURCE=web
+WEB_CANVAS_HOST=0.0.0.0
+WEB_CANVAS_PORT=8765
+```
+
+Then run the app and open `http://localhost:8765` locally or expose port `8765` with Cloudflare Tunnel for the phone.
+
+The web canvas is intentionally minimal:
+
+- pen
+- eraser
+- clear
+- black ink on a white canvas
+
+All open web canvas sessions now stay in sync by replaying shared stroke events from the Python server. The classifier reads the server-rendered shared canvas, not the last client snapshot.
 
 ## Run
 
@@ -165,6 +193,8 @@ Expected speech gate JSON:
     ["circle", 0.14],
     ["gear", 0.08]
   ],
+  "spoken_label": "bottlecap",
+  "alternate_label": null,
   "stable_ms": 620,
   "should_speak": true,
   "reason": "stable_confident_guess",
@@ -175,8 +205,10 @@ Expected speech gate JSON:
 The spoken line will be a preset phrase such as:
 
 ```text
-My guess is bottlecap.
+bottlecap.
 ```
+
+In fast-talk mode, the speech layer can also hedge between two recent candidates, for example `watermelon or camouflage.`
 
 ## Using the Real QuickDraw TFLite Model
 

@@ -1,6 +1,6 @@
 import unittest
 
-from draw_game.responses import make_low_confidence_taunt, make_spoken_line
+from draw_game.responses import LOW_CONFIDENCE_TAUNTS, make_low_confidence_taunt, make_spoken_line
 
 
 class ResponseTests(unittest.TestCase):
@@ -20,6 +20,7 @@ class ResponseTests(unittest.TestCase):
             {
                 "cat.",
                 "I think it's cat.",
+                "Is it cat?",
             },
         )
 
@@ -34,16 +35,20 @@ class ResponseTests(unittest.TestCase):
             },
         )
 
-    def test_make_low_confidence_taunt_is_short_and_mild(self):
-        line = make_low_confidence_taunt()
+    def test_make_spoken_line_can_hedge_between_two_labels(self):
+        line = make_spoken_line("watermelon", 0.28, alternate_label="camouflage")
 
         self.assertIn(
             line,
             {
-                "Draw better.",
-                "This is rough.",
-                "Help me out here.",
-                "That drawing is brutal.",
-                "Give me something clearer.",
+                "watermelon or camouflage.",
+                "Maybe watermelon or camouflage.",
+                "watermelon... or camouflage.",
+                "Is it watermelon or camouflage?",
             },
         )
+
+    def test_make_low_confidence_taunt_is_short_and_mild(self):
+        line = make_low_confidence_taunt()
+
+        self.assertIn(line, set(LOW_CONFIDENCE_TAUNTS))

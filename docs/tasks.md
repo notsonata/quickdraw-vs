@@ -57,3 +57,35 @@ Add multiple preprocessing profiles plus a comparison mode so the 28x28 QuickDra
 - **Files**: `draw_game/config.py`, `draw_game/preprocess.py`, `draw_game/main.py`, `draw_game/capture.py`, `tests/test_preprocess.py`, `docs/`
 - **Context**: Tall thin sketches such as `door` can become too jagged or too thin after downscaling, which pushes predictions toward unrelated labels. The app needs profile-level experimentation focused on the final 28x28 model input.
 - **Status**: Done
+
+### [High] Keep Fast-Talk Gameplay While Hedging Noisy Guesses
+
+Make `AI_SPEAK_EVERY_SCAN` mode stay chatty without blindly repeating single-frame `top1` labels by summarizing recent `top3` candidates into a spoken label and optional alternate label.
+
+- **Files**: `draw_game/decision.py`, `draw_game/main.py`, `draw_game/responses.py`, `tests/test_decision.py`, `tests/test_responses.py`, `docs/`
+- **Context**: Fast-paced rounds work better when the AI talks often, but raw 28x28 QuickDraw predictions can flicker between related labels like `watermelon` and `camouflage`. Speech should stay lively while sounding less arbitrarily wrong.
+- **Status**: Done
+
+### [High] Add Single-User Mobile Web Canvas Mode
+
+Serve a minimal phone-friendly drawing canvas with only pen, eraser, and clear tools, and let the classifier loop read uploaded PNG snapshots instead of a screen crop when configured.
+
+- **Files**: `draw_game/config.py`, `draw_game/main.py`, `draw_game/web_canvas.py`, `tests/test_web_canvas.py`, `README.md`, `docs/`
+- **Context**: The existing Canva workflow is convenient, but a first-party drawing surface gives cleaner input without adding multi-user complexity. The app only needs to support one active drawer.
+- **Status**: Done
+
+### [High] Sync All Web Canvas Sessions
+
+Make every open web canvas session share the same drawing state so multiple viewers or drawers stay aligned and the classifier always reads the server-side canonical canvas.
+
+- **Files**: `draw_game/web_canvas.py`, `draw_game/main.py`, `tests/test_web_canvas.py`, `README.md`, `docs/`
+- **Context**: A single-user snapshot uploader is not enough once multiple phones or browsers open the canvas. The app needs one shared in-memory drawing that every client can replay and the classifier can render consistently.
+- **Status**: Done
+
+### [High] Rotate Weak Repeated Guesses Through Top-5 Candidates
+
+When the model gets stuck repeating the same weak `top1` prediction in fast-talk mode, rotate through the current top-5 candidates instead of parroting one label forever, and lower the live confidence floor for gameplay.
+
+- **Files**: `draw_game/decision.py`, `draw_game/.env`, `tests/test_decision.py`
+- **Context**: The current QuickDraw model often latches onto one wrong label. The speech layer needs to stay chatty while moving through plausible alternates instead of sounding broken.
+- **Status**: Done

@@ -36,6 +36,20 @@ On Intel Macs:
 python3 main.py
 ```
 
+## Run With Web Canvas
+
+Set `CANVAS_SOURCE=web` in `draw_game/.env` or the shell, then start the app normally.
+
+Important settings:
+
+```env
+CANVAS_SOURCE=web
+WEB_CANVAS_HOST=0.0.0.0
+WEB_CANVAS_PORT=8765
+```
+
+Open `http://localhost:8765` on the local machine or expose that port through Cloudflare Tunnel for a phone browser.
+
 ## Test
 
 ```bash

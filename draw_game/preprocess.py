@@ -150,6 +150,24 @@ def _tensor_from_preview(preview: np.ndarray) -> np.ndarray:
     return (preview.astype(np.float32) / 255.0)[None, :, :, None]
 
 
+def preprocess_for_web_canvas(
+    frame: np.ndarray,
+    input_size: int | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Prepare a first-party square drawing canvas for the QuickDraw TFLite model.
+
+    Unlike the screenshot path, this does not crop/recenter/dilate strokes.
+    It follows the model-card contract more directly: grayscale, resize to the
+    model input size, keep white background at 255 and black strokes at 0.
+    """
+    _ensure_cv2()
+    width, height = _resolve_model_size(input_size)
+    gray = _prepare_gray(frame)
+    preview = cv2.resize(gray, (width, height), interpolation=cv2.INTER_AREA)
+    preview = np.clip(np.rint(preview), 0, 255).astype(np.uint8)
+    return _tensor_from_preview(preview), preview
+
+
 def preprocess_for_classifier_with_profile(
     frame: np.ndarray,
     profile_name: str,

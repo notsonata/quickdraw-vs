@@ -16,3 +16,7 @@
 - Expanded the snarky low-confidence AI response list in `draw_game/responses.py` with more insults to improve game personality.
 - Updated TTS dispatch so accepted guesses start immediately when idle, active speech is never interrupted, and only the latest pending guess is kept for playback after the current line finishes; added regression coverage for both prompt dispatch and latest-after-finish handoff.
 - Added configurable QuickDraw preprocessing profiles (`current`, `dilate_before_resize`, `dilate_after_resize`, `antialias_grayscale`, `more_margin`), plus comparison-mode top-3 debug output and per-profile 280x280 previews for side-by-side rendering checks.
+- Changed the fast-talk speech layer to summarize recent `top3` predictions into a spoken primary label plus optional alternate label, so the AI can keep talking frequently while sounding less random on unstable sketches.
+- Added a single-user mobile web canvas mode served directly from the Python app, with pen, eraser, and clear tools plus PNG snapshot uploads that the existing classifier loop can read instead of a screen crop.
+- Replaced the snapshot-based web canvas with a shared event-synced canvas so every open session stays in sync and the classifier renders from one canonical server-side stroke log.
+- Fixed fast-talk fallback rotation so repeated weak `top1` guesses now walk the current top-5 candidates in order instead of getting stuck, and lowered the live confidence floor in `draw_game/.env` to `0.03` for more aggressive guessing.

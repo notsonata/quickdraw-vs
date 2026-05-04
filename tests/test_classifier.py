@@ -50,13 +50,15 @@ class ClassifierTests(unittest.TestCase):
 
         prediction = classifier.predict(None)
 
-        self.assertEqual(set(prediction), {"top1", "confidence", "top3"})
+        self.assertEqual(set(prediction), {"top1", "confidence", "top3", "top5"})
         self.assertIsInstance(prediction["top1"], str)
         self.assertLessEqual(0.0, prediction["confidence"])
         self.assertLessEqual(prediction["confidence"], 1.0)
         self.assertEqual(len(prediction["top3"]), 3)
+        self.assertEqual(len(prediction["top5"]), 5)
         self.assertEqual(prediction["top3"][0][0], prediction["top1"])
         self.assertEqual(prediction["top3"][0][1], prediction["confidence"])
+        self.assertEqual(prediction["top5"][0][0], prediction["top1"])
 
     def test_tflite_classifier_loads_345_labels(self):
         with TemporaryDirectory() as tmp:
@@ -92,7 +94,9 @@ class ClassifierTests(unittest.TestCase):
         self.assertIn("top1", prediction)
         self.assertIn("confidence", prediction)
         self.assertIn("top3", prediction)
+        self.assertIn("top5", prediction)
         self.assertEqual(len(prediction["top3"]), 3)
+        self.assertEqual(len(prediction["top5"]), 5)
 
     def test_tflite_backend_missing_model_falls_back_to_stub(self):
         with TemporaryDirectory() as tmp:
@@ -234,5 +238,48 @@ class ClassifierTests(unittest.TestCase):
                     ("end", "cat"),
                     ("start", "bird"),
                     ("end", "bird"),
+                ],
+            )
+
+    def test_tts_worker_can_interrupt_taunt_for_guess(self):
+        worker = TTSWorker()
+        started = Event()
+        calls: list[tuple[str, str]] = []
+        call_lock = Lock()
+
+        def fake_speak_now(text: str) -> None:
+            with call_lock:
+                calls.append(("start", text))
+            started.set()
+            deadline = monotonic() + 1.0
+            while monotonic() < deadline and not worker.should_interrupt_current():
+                sleep(0.01)
+            with call_lock:
+                calls.append(("end", text))
+
+        worker._speak_now = fake_speak_now
+
+        first = Thread(target=worker.speak, kwargs={"text": "Draw better.", "speech_kind": "taunt"})
+        first.start()
+        self.assertTrue(started.wait(timeout=1.0))
+
+        worker.speak("door.", interrupt=True, speech_kind="guess")
+
+        deadline = monotonic() + 1.5
+        while monotonic() < deadline:
+            with call_lock:
+                snapshot = list(calls)
+            if ("end", "door.") in snapshot:
+                break
+            sleep(0.01)
+
+        with call_lock:
+            self.assertEqual(
+                calls,
+                [
+                    ("start", "Draw better."),
+                    ("end", "Draw better."),
+                    ("start", "door."),
+                    ("end", "door."),
                 ],
             )

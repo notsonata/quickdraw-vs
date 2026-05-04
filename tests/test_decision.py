@@ -4,11 +4,13 @@ from types import SimpleNamespace
 from draw_game.decision import SpeechGate
 
 
-def result(label="cat", confidence=0.8):
+def result(label="cat", confidence=0.8, top3=None, top5=None):
+    top3_value = top3 or [[label, confidence], ["dog", 0.1], ["rabbit", 0.05]]
     return {
         "top1": label,
         "confidence": confidence,
-        "top3": [[label, confidence], ["dog", 0.1], ["rabbit", 0.05]],
+        "top3": top3_value,
+        "top5": top5 or top3_value + [["horse", 0.03], ["frog", 0.02]],
     }
 
 
@@ -122,6 +124,67 @@ class SpeechGateTests(unittest.TestCase):
         self.assertEqual(first["reason"], "speak_every_scan")
         self.assertEqual(second["reason"], "speak_every_scan")
 
+    def test_gate_prefers_recent_consensus_label_for_spoken_guess(self):
+        times = iter([0.0, 0.1, 0.2])
+        gate = SpeechGate(now_func=lambda: next(times))
+        gate.start_round()
+
+        from unittest.mock import patch
+
+        scan_settings = SimpleNamespace(
+            AI_SPEAK_EVERY_SCAN=True,
+            AI_FIRST_GUESS_DELAY_SEC=0.0,
+            AI_MIN_CONFIDENCE=0.10,
+            AI_STABLE_FOR_SEC=0.0,
+            AI_SPEECH_COOLDOWN_SEC=0.0,
+            MAX_AI_GUESSES_PER_ROUND=999,
+        )
+        with patch("draw_game.decision.settings", scan_settings):
+            gate.update(
+                result(
+                    "camouflage",
+                    0.26,
+                    top3=[["camouflage", 0.26], ["watermelon", 0.24], ["apple", 0.10]],
+                )
+            )
+            second = gate.update(
+                result(
+                    "watermelon",
+                    0.27,
+                    top3=[["watermelon", 0.27], ["camouflage", 0.22], ["apple", 0.08]],
+                )
+            )
+
+        self.assertEqual(second["spoken_label"], "watermelon")
+        self.assertEqual(second["speech_kind"], "guess")
+
+    def test_gate_can_request_hedged_speech_when_two_labels_are_close(self):
+        times = iter([0.0, 0.1])
+        gate = SpeechGate(now_func=lambda: next(times))
+        gate.start_round()
+
+        from unittest.mock import patch
+
+        scan_settings = SimpleNamespace(
+            AI_SPEAK_EVERY_SCAN=True,
+            AI_FIRST_GUESS_DELAY_SEC=0.0,
+            AI_MIN_CONFIDENCE=0.10,
+            AI_STABLE_FOR_SEC=0.0,
+            AI_SPEECH_COOLDOWN_SEC=0.0,
+            MAX_AI_GUESSES_PER_ROUND=999,
+        )
+        with patch("draw_game.decision.settings", scan_settings):
+            decision = gate.update(
+                result(
+                    "camouflage",
+                    0.21,
+                    top3=[["camouflage", 0.21], ["watermelon", 0.20], ["apple", 0.05]],
+                )
+            )
+
+        self.assertEqual(decision["spoken_label"], "camouflage")
+        self.assertEqual(decision["alternate_label"], "watermelon")
+
     def test_gate_emits_taunt_after_long_low_confidence_period(self):
         times = iter([0.0, 0.1, 3.0])
         gate = SpeechGate(now_func=lambda: next(times))
@@ -140,10 +203,113 @@ class SpeechGateTests(unittest.TestCase):
             AI_TAUNT_COOLDOWN_SEC=5.0,
         )
         with patch("draw_game.decision.settings", taunt_settings):
-            first = gate.update(result("camouflage", 0.02))
-            second = gate.update(result("camouflage", 0.02))
+            very_low = result(
+                "camouflage",
+                0.02,
+                top3=[["camouflage", 0.02], ["dog", 0.01], ["rabbit", 0.01]],
+                top5=[["camouflage", 0.02], ["dog", 0.01], ["rabbit", 0.01], ["horse", 0.01], ["frog", 0.01]],
+            )
+            first = gate.update(very_low)
+            second = gate.update(very_low)
 
         self.assertFalse(first["should_speak"])
         self.assertTrue(second["should_speak"])
         self.assertEqual(second["reason"], "low_confidence_taunt")
         self.assertEqual(second["speech_kind"], "taunt")
+
+    def test_gate_uses_top5_alternative_when_stuck_on_same_label(self):
+        times = iter([0.0, 0.1, 0.2, 0.3])
+        gate = SpeechGate(now_func=lambda: next(times))
+        gate.start_round()
+
+        from unittest.mock import patch
+
+        scan_settings = SimpleNamespace(
+            AI_SPEAK_EVERY_SCAN=True,
+            AI_FIRST_GUESS_DELAY_SEC=0.0,
+            AI_MIN_CONFIDENCE=0.10,
+            AI_STABLE_FOR_SEC=0.0,
+            AI_SPEECH_COOLDOWN_SEC=0.0,
+            MAX_AI_GUESSES_PER_ROUND=999,
+            AI_LOW_CONFIDENCE_TAUNT_SEC=2.5,
+            AI_TAUNT_COOLDOWN_SEC=5.0,
+        )
+        with patch("draw_game.decision.settings", scan_settings):
+            first = gate.update(
+                result(
+                    "dishwasher",
+                    0.24,
+                    top3=[["dishwasher", 0.24], ["oven", 0.22], ["stove", 0.20]],
+                    top5=[
+                        ["dishwasher", 0.24],
+                        ["oven", 0.22],
+                        ["stove", 0.20],
+                        ["microwave", 0.18],
+                        ["door", 0.17],
+                    ],
+                )
+            )
+            second = gate.update(
+                result(
+                    "dishwasher",
+                    0.23,
+                    top3=[["dishwasher", 0.23], ["oven", 0.22], ["stove", 0.19]],
+                    top5=[
+                        ["dishwasher", 0.23],
+                        ["oven", 0.22],
+                        ["stove", 0.19],
+                        ["microwave", 0.18],
+                        ["door", 0.17],
+                    ],
+                )
+            )
+            third = gate.update(
+                result(
+                    "dishwasher",
+                    0.22,
+                    top3=[["dishwasher", 0.22], ["oven", 0.21], ["stove", 0.20]],
+                    top5=[
+                        ["dishwasher", 0.22],
+                        ["oven", 0.21],
+                        ["stove", 0.20],
+                        ["microwave", 0.18],
+                        ["door", 0.17],
+                    ],
+                )
+            )
+
+        self.assertEqual(first["spoken_label"], "dishwasher")
+        self.assertEqual(second["spoken_label"], "oven")
+        self.assertEqual(second["alternate_label"], "dishwasher")
+        self.assertEqual(third["spoken_label"], "stove")
+        self.assertEqual(third["alternate_label"], "dishwasher")
+
+    def test_gate_does_not_taunt_when_second_choice_is_nearly_confident(self):
+        times = iter([0.0, 0.1, 3.0])
+        gate = SpeechGate(now_func=lambda: next(times))
+        gate.start_round()
+
+        from unittest.mock import patch
+
+        scan_settings = SimpleNamespace(
+            AI_SPEAK_EVERY_SCAN=True,
+            AI_FIRST_GUESS_DELAY_SEC=0.0,
+            AI_MIN_CONFIDENCE=0.10,
+            AI_STABLE_FOR_SEC=0.0,
+            AI_SPEECH_COOLDOWN_SEC=0.0,
+            MAX_AI_GUESSES_PER_ROUND=999,
+            AI_LOW_CONFIDENCE_TAUNT_SEC=2.5,
+            AI_TAUNT_COOLDOWN_SEC=5.0,
+        )
+        near_confident = result(
+            "camouflage",
+            0.05,
+            top3=[["camouflage", 0.05], ["door", 0.09], ["oven", 0.07]],
+            top5=[["camouflage", 0.05], ["door", 0.09], ["oven", 0.07], ["stove", 0.06], ["map", 0.05]],
+        )
+        with patch("draw_game.decision.settings", scan_settings):
+            gate.update(near_confident)
+            second = gate.update(near_confident)
+
+        self.assertFalse(second["should_speak"])
+        self.assertEqual(second["reason"], "low_confidence")
