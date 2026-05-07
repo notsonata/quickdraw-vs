@@ -557,6 +557,33 @@ class SharedCanvasState:
                 raise NoCanvasFrameError("No canvas image has been uploaded yet.")
             return self._render_locked()
 
+    def get_pen_strokes(self) -> list[dict]:
+        """Return pen stroke events that occurred after the most recent clear.
+
+        Eraser strokes are excluded. The returned list is safe to read outside
+        the lock (each item is a shallow copy made while the lock is held).
+        """
+        with self._lock:
+            result: list[dict] = []
+            for event in self._events:
+                if event["type"] == "clear":
+                    result = []
+                    continue
+                if event["type"] == "stroke" and event.get("tool") == "pen":
+                    result.append(event.copy())
+            return result
+
+    def clear_strokes(self) -> None:
+        """Inject a system-generated clear event to reset the drawing canvas.
+
+        Call this at round start to discard strokes from the previous round
+        without requiring the user to press the Clear button.
+        """
+        with self._lock:
+            seq = self._next_seq
+            self._next_seq += 1
+            self._events.append({"seq": seq, "type": "clear", "client_id": "__system__"})
+
 
 def _json_bytes(payload: dict) -> bytes:
     return json.dumps(payload).encode("utf-8")

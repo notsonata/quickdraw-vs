@@ -195,6 +195,7 @@ def main() -> int:
                     gemma_detector.clear_pending_result()
                 if image_store is not None:
                     image_store.start_round(settings.ROUND_DURATION_SEC)
+                    image_store.clear_strokes()  # discard strokes from previous round
                 logging.info("round start")
                 print("Round started.")
             elif key == "e":
@@ -210,14 +211,12 @@ def main() -> int:
                 try:
                     if settings.CANVAS_SOURCE == "web":
                         last_frame = image_store.get_latest_frame()
+                        last_preview = None  # no image preview in stroke mode
                     else:
                         last_frame = capture.capture_canvas_crop()
-                    if settings.CANVAS_SOURCE == "web":
-                        _model_input, last_preview = preprocess.preprocess_for_web_canvas(last_frame)
-                    else:
                         _model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                     profile_previews = None
-                    if settings.PREPROCESS_COMPARE_PROFILES:
+                    if settings.PREPROCESS_COMPARE_PROFILES and settings.CANVAS_SOURCE != "web":
                         _comparison, profile_previews = _run_profile_comparison(last_frame, clf)
                     paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
                     logging.info("saved debug artifacts: %s", paths)
@@ -244,12 +243,23 @@ def main() -> int:
 
             try:
                 if settings.CANVAS_SOURCE == "web":
-                    last_frame = image_store.get_latest_frame()
+                    # --- stroke-sequence path ---
+                    stroke_events = image_store.get_pen_strokes()
+                    model_input = preprocess.preprocess_strokes(stroke_events)
+                    if model_input is None:
+                        # Too few pen points — wait for more drawing.
+                        time.sleep(0.05)
+                        continue
+                    last_preview = None
+                    # Rendered frame is only needed for Gemma or debug saves.
+                    last_frame = None
+                    if gemma_detector is not None or settings.DEBUG_SAVE_FRAMES:
+                        try:
+                            last_frame = image_store.get_latest_frame()
+                        except web_canvas.NoCanvasFrameError:
+                            last_frame = None
                 else:
                     last_frame = capture.capture_canvas_crop()
-                if settings.CANVAS_SOURCE == "web":
-                    model_input, last_preview = preprocess.preprocess_for_web_canvas(last_frame)
-                else:
                     model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                 result = clf.predict(model_input)
                 gemma_result = None

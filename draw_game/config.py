@@ -99,12 +99,12 @@ class Settings:
     MODEL_BACKEND: str = _get("MODEL_BACKEND", "stub", _backend)
     MODEL_PATH: Path = _get(
         "MODEL_PATH",
-        BASE_DIR / "models" / "quickdraw-345-tflite" / "quickdraw_model.tflite",
+        BASE_DIR / "models" / "quickdraw_stroke_tflite" / "quickdraw_stroke_model_float32.tflite",
         _path,
     )
     LABELS_PATH: Path = _get(
         "LABELS_PATH",
-        BASE_DIR / "models" / "quickdraw-345-tflite" / "labels.txt",
+        BASE_DIR / "models" / "quickdraw_stroke_tflite" / "labels.json",
         _path,
     )
     MODEL_INPUT_W: int = _get("MODEL_INPUT_W", 28, int)
@@ -112,6 +112,9 @@ class Settings:
     MODEL_INPUT_CHANNELS: int = _get("MODEL_INPUT_CHANNELS", 1, int)
     MODEL_BACKGROUND_VALUE: float = _get("MODEL_BACKGROUND_VALUE", 1.0, float)
     MODEL_STROKE_VALUE: float = _get("MODEL_STROKE_VALUE", 0.0, float)
+    # Stroke-sequence model settings
+    MODEL_SEQ_LEN: int = _get("MODEL_SEQ_LEN", 128, int)
+    MODEL_FEATURES: int = _get("MODEL_FEATURES", 5, int)
     PREPROCESS_PROFILE: str = _get("PREPROCESS_PROFILE", "current", _preprocess_profile)
     PREPROCESS_COMPARE_PROFILES: bool = _get("PREPROCESS_COMPARE_PROFILES", False, _bool)
     PREPROCESS_INTERMEDIATE_SIZE: int = _get("PREPROCESS_INTERMEDIATE_SIZE", 64, int)

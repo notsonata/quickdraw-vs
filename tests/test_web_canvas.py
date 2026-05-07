@@ -141,3 +141,79 @@ class WebCanvasServerTests(unittest.TestCase):
         finally:
             server.shutdown()
             server.server_close()
+
+
+class StrokeSyncTests(unittest.TestCase):
+    """Tests for get_pen_strokes() and clear_strokes() on SharedCanvasState."""
+
+    def _pen_event(self, points=None):
+        return {
+            "type": "stroke",
+            "tool": "pen",
+            "width": 0.01,
+            "points": points or [[0.1, 0.1], [0.5, 0.5]],
+        }
+
+    def _eraser_event(self, points=None):
+        return {
+            "type": "stroke",
+            "tool": "eraser",
+            "width": 0.03,
+            "points": points or [[0.2, 0.2], [0.4, 0.4]],
+        }
+
+    def test_get_pen_strokes_returns_empty_when_no_events(self):
+        store = SharedCanvasState()
+        self.assertEqual(store.get_pen_strokes(), [])
+
+    def test_get_pen_strokes_returns_pen_strokes(self):
+        store = SharedCanvasState()
+        store.add_event(self._pen_event())
+
+        strokes = store.get_pen_strokes()
+
+        self.assertEqual(len(strokes), 1)
+        self.assertEqual(strokes[0]["tool"], "pen")
+
+    def test_get_pen_strokes_excludes_eraser_strokes(self):
+        store = SharedCanvasState()
+        store.add_event(self._pen_event())
+        store.add_event(self._eraser_event())
+
+        strokes = store.get_pen_strokes()
+
+        self.assertEqual(len(strokes), 1)
+        self.assertEqual(strokes[0]["tool"], "pen")
+
+    def test_get_pen_strokes_resets_on_clear_event(self):
+        store = SharedCanvasState()
+        store.add_event(self._pen_event())
+        store.add_event({"type": "clear"})
+        store.add_event(self._pen_event([[0.3, 0.3], [0.7, 0.7]]))
+
+        strokes = store.get_pen_strokes()
+
+        # Only the stroke after the clear should be returned.
+        self.assertEqual(len(strokes), 1)
+        self.assertEqual(strokes[0]["points"][0], [0.3, 0.3])
+
+    def test_clear_strokes_resets_pen_stroke_history(self):
+        store = SharedCanvasState()
+        store.add_event(self._pen_event())
+        store.add_event(self._pen_event())
+
+        store.clear_strokes()
+
+        self.assertEqual(store.get_pen_strokes(), [])
+
+    def test_clear_strokes_does_not_affect_future_strokes(self):
+        store = SharedCanvasState()
+        store.add_event(self._pen_event())
+        store.clear_strokes()
+        store.add_event(self._pen_event([[0.6, 0.6], [0.8, 0.8]]))
+
+        strokes = store.get_pen_strokes()
+
+        self.assertEqual(len(strokes), 1)
+        self.assertEqual(strokes[0]["points"][0], [0.6, 0.6])
+

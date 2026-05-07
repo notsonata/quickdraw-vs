@@ -254,3 +254,85 @@ def preprocess_for_classifier(
     background is 1.0 and dark strokes are 0.0.
     """
     return preprocess_for_classifier_with_profile(frame, settings.PREPROCESS_PROFILE, input_size)
+
+
+# ---------------------------------------------------------------------------
+# Stroke-sequence preprocessor (new model: [1, 128, 5])
+# ---------------------------------------------------------------------------
+
+MIN_STROKE_PEN_POINTS = 8  # minimum total pen points before attempting prediction
+
+
+def _flatten_pen_events(stroke_events: list[dict]) -> list[tuple[float, float, bool]]:
+    """Flatten pen stroke events into (x, y, is_stroke_end) tuples.
+
+    Only pen strokes are included; eraser strokes are ignored.
+    is_stroke_end is True for the last point of each individual stroke.
+    """
+    flat: list[tuple[float, float, bool]] = []
+    for event in stroke_events:
+        if event.get("type") != "stroke" or event.get("tool") == "eraser":
+            continue
+        pts = event.get("points", [])
+        if not pts:
+            continue
+        for idx, pt in enumerate(pts):
+            is_stroke_end = idx == len(pts) - 1
+            flat.append((float(pt[0]), float(pt[1]), is_stroke_end))
+    return flat
+
+
+def preprocess_strokes(
+    stroke_events: list[dict],
+    seq_len: int | None = None,
+) -> np.ndarray | None:
+    """Convert pen stroke events into a [1, seq_len, 5] float32 tensor.
+
+    Features per timestep: [dx, dy, pen_down, pen_up, end]
+      - dx, dy  : coordinate deltas in [0, 1] normalized space (~[-1, 1]).
+                  Points arrive already normalized to [0, 1] from the frontend,
+                  so deltas match the model's expected scale (equivalent to
+                  raw_pixel_delta / canvas_size).
+      - pen_down: 1 while the pen is actively drawing (not at stroke end).
+      - pen_up  : 1 at the last point of each stroke (pen lift).
+      - end     : 1 at the final end token (always at index seq_len-1 or
+                  immediately after the last content point).
+
+    The last slot (index seq_len-1) is reserved for the end token.
+    Content is capped at seq_len-1 timesteps; if there are more raw points
+    they are evenly subsampled while preserving stroke boundaries.
+
+    Returns None if fewer than MIN_STROKE_PEN_POINTS total pen points exist.
+    """
+    resolved_seq_len = seq_len or settings.MODEL_SEQ_LEN
+    flat = _flatten_pen_events(stroke_events)
+
+    if len(flat) < MIN_STROKE_PEN_POINTS:
+        return None
+
+    content_slots = resolved_seq_len - 1  # last slot = end token
+
+    # Evenly subsample when there are too many points.
+    if len(flat) > content_slots:
+        indices = np.round(np.linspace(0, len(flat) - 1, content_slots)).astype(int)
+        indices[-1] = len(flat) - 1  # always include the last point
+        sampled: list[tuple[float, float, bool]] = [flat[i] for i in indices]
+    else:
+        sampled = flat
+
+    tensor = np.zeros((resolved_seq_len, 5), dtype=np.float32)
+
+    prev_x, prev_y = sampled[0][0], sampled[0][1]
+    for slot, (x, y, is_stroke_end) in enumerate(sampled):
+        dx = x - prev_x
+        dy = y - prev_y
+        pen_down = 0.0 if is_stroke_end else 1.0
+        pen_up = 1.0 if is_stroke_end else 0.0
+        tensor[slot] = [dx, dy, pen_down, pen_up, 0.0]
+        prev_x, prev_y = x, y
+
+    # Place end token immediately after the last content point.
+    end_slot = min(len(sampled), resolved_seq_len - 1)
+    tensor[end_slot] = [0.0, 0.0, 0.0, 0.0, 1.0]
+
+    return tensor[np.newaxis, :, :]  # [1, seq_len, 5]

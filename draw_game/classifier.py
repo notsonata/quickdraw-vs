@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import random
 import sys
 from itertools import cycle
@@ -26,24 +27,32 @@ def load_labels(path: Path | str) -> list[str]:
     labels_path = Path(path)
     if not labels_path.exists():
         return FALLBACK_LABELS.copy()
-    labels = [
-        line.strip()
-        for line in labels_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    text = labels_path.read_text(encoding="utf-8")
+    if labels_path.suffix.lower() == ".json":
+        try:
+            data = json.loads(text)
+            if isinstance(data, list):
+                labels = [str(item).strip() for item in data if str(item).strip()]
+                return labels or FALLBACK_LABELS.copy()
+        except Exception:
+            pass
+    labels = [line.strip() for line in text.splitlines() if line.strip()]
     return labels or FALLBACK_LABELS.copy()
 
 
-def load_required_labels(path: Path | str, expected_count: int = QUICKDRAW_LABEL_COUNT) -> list[str]:
+def load_required_labels(path: Path | str, expected_count: int | None = None) -> list[str]:
+    """Load labels from a .txt or .json file.
+
+    Pass expected_count to enforce a specific count; omit (or pass None) to
+    accept any non-empty label list.
+    """
     labels_path = Path(path)
     if not labels_path.exists():
         raise FileNotFoundError(f"Labels file not found: {labels_path}")
-    labels = [
-        line.strip()
-        for line in labels_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
-    if len(labels) != expected_count:
+    labels = load_labels(labels_path)
+    if not labels:
+        raise ValueError(f"No labels found in {labels_path}.")
+    if expected_count is not None and len(labels) != expected_count:
         raise ValueError(
             f"Expected {expected_count} labels in {labels_path}, found {len(labels)}."
         )
@@ -176,6 +185,13 @@ class TFLiteClassifier:
 
     def _prepare_input(self, model_input: np.ndarray) -> np.ndarray:
         x = np.asarray(model_input, dtype=np.float32)
+
+        # Stroke-sequence input: [1, seq_len, features] — pass through as-is.
+        # dx/dy values are signed so range checks do not apply.
+        if x.ndim == 3:
+            return x
+
+        # Image input: reshape to [1, H, W, C].
         if x.shape == (settings.MODEL_INPUT_H, settings.MODEL_INPUT_W):
             x = x[None, :, :, None]
         elif x.shape == (settings.MODEL_INPUT_H, settings.MODEL_INPUT_W, 1):
@@ -197,8 +213,9 @@ class TFLiteClassifier:
                 )
             except ValueError as exc:
                 raise ValueError(
-                    "TFLite model input must be [28, 28], [28, 28, 1], "
-                    f"or [1, 28, 28, 1]; got {x.shape}."
+                    f"TFLite input shape {x.shape} is not a valid "
+                    "stroke sequence [1, seq_len, features] or image "
+                    f"[{settings.MODEL_INPUT_H}, {settings.MODEL_INPUT_W}]."
                 ) from exc
 
         expected_shape = (
