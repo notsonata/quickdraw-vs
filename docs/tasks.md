@@ -89,3 +89,35 @@ When the model gets stuck repeating the same weak `top1` prediction in fast-talk
 - **Files**: `draw_game/decision.py`, `draw_game/.env`, `tests/test_decision.py`
 - **Context**: The current QuickDraw model often latches onto one wrong label. The speech layer needs to stay chatty while moving through plausible alternates instead of sounding broken.
 - **Status**: Done
+
+### [High] Add Gemma Vision Label Arbiter
+
+Add an optional local Gemma/PaliGemma vision path that reads the raw canvas frame, constrains detections to the same QuickDraw label set, and prioritizes each valid Gemma detection for speech.
+
+- **Files**: `draw_game/gemma_vision.py`, `draw_game/config.py`, `draw_game/main.py`, `draw_game/decision.py`, `tests/`, `docs/`
+- **Context**: QuickDraw often gets stuck on weak repeated guesses. Gemma/PaliGemma should provide a higher-level read of the canvas without inventing labels outside the game prompt list.
+- **Status**: Done
+
+### [High] Add Web Canvas Round Timer
+
+Show a countdown on the drawing canvas and automatically end active rounds when the configured duration elapses.
+
+- **Files**: `draw_game/config.py`, `draw_game/main.py`, `draw_game/web_canvas.py`, `tests/`, `docs/`
+- **Context**: Rounds should end without manual keyboard input, and drawers should see the remaining time directly on the drawing surface.
+- **Status**: Done
+
+### [High] Cycle Through Top-5 On Confidence Stall
+
+After speaking the current `top1`, detect when subsequent scans keep the same `top1` confidence and rotate speech through the current top-5 labels instead of repeating one guess.
+
+- **Files**: `draw_game/decision.py`, `tests/test_decision.py`, `docs/`
+- **Context**: Fast-talk gameplay sounds stuck when confidence does not change frame-to-frame; speech should walk alternatives automatically.
+- **Status**: Done
+
+### [Medium] Taunt Whenever Confidence Falls Below Minimum
+
+When `confidence < AI_MIN_CONFIDENCE`, speak a taunt immediately (respecting the taunt cooldown) instead of staying silent.
+
+- **Files**: `draw_game/decision.py`, `tests/test_decision.py`, `docs/`
+- **Context**: Low-confidence moments should always produce an audible taunt rather than a quiet skip.
+- **Status**: Done

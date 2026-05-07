@@ -207,6 +207,11 @@ def prime() -> None:
     _WORKER.prime()
 
 
+def clear_pending() -> None:
+    """Clear any pending speech without playing it."""
+    _WORKER._pending_text = None
+
+
 def resolve_output_device(sounddevice_module, configured_device: str = ""):
     configured_device = configured_device.strip()
     if not configured_device:

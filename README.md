@@ -9,6 +9,7 @@ Google Meet is only the social layer. This app does not integrate with Google Me
 - Screen capture uses a fixed rectangle only.
 - The target classifier model, `zarqankhn/quickdraw-345-tflite`, is not installed automatically.
 - TFLite is the default real-model backend when configured; ONNX support remains available.
+- Gemma/PaliGemma vision is optional and runs locally; accepted detections are constrained to the QuickDraw label file.
 - If no supported model exists, the app uses `StubClassifier`.
 - No speech recognition, winner detection, Canva detection, or database.
 - Kokoro support is best-effort because local package and playback APIs vary; console and optional `pyttsx3` fallback keep the loop running.
@@ -161,6 +162,19 @@ Canva screen crop
 -> preset phrase
 -> Kokoro TTS
 -> local audio output
+```
+
+Set `ROUND_DURATION_SEC` to control the round timer. In web canvas mode, the countdown appears over the drawing field and the app automatically ends the round when the timer reaches zero. Set `ROUND_DURATION_SEC=0` to disable auto-ending.
+
+If Gemma vision is enabled, the app also sends the raw canvas frame to a local PaliGemma model at the configured interval. Each accepted Gemma detection is validated against the same QuickDraw label set and is prioritized for speech over the local QuickDraw result.
+
+Optional Gemma settings:
+
+```env
+GEMMA_ENABLED=true
+GEMMA_MODEL=google/paligemma-3b-mix-224
+GEMMA_INTERVAL_SEC=2.0
+GEMMA_CONFIDENCE=0.9
 ```
 
 ## Test Without a Real Model

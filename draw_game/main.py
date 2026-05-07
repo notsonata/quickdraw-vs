@@ -12,12 +12,13 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from . import capture, classifier, preprocess, responses, tts_kokoro, web_canvas
+    from . import capture, classifier, gemma_vision, preprocess, responses, tts_kokoro, web_canvas
     from .config import settings
     from .decision import SpeechGate
 except ImportError:  # pragma: no cover - supports python main.py from draw_game/
     import capture
     import classifier
+    import gemma_vision
     import preprocess
     import responses
     import tts_kokoro
@@ -113,6 +114,13 @@ def log_startup_config() -> None:
         settings.LABELS_PATH,
         settings.TTS_ENABLED,
     )
+    logging.info(
+        "gemma config: enabled=%s model=%s interval=%s confidence=%s",
+        settings.GEMMA_ENABLED,
+        settings.GEMMA_MODEL,
+        settings.GEMMA_INTERVAL_SEC,
+        settings.GEMMA_CONFIDENCE,
+    )
 
 
 def _start_web_canvas_server() -> tuple[web_canvas.SharedCanvasState, object, threading.Thread]:
@@ -132,6 +140,22 @@ def _start_web_canvas_server() -> tuple[web_canvas.SharedCanvasState, object, th
     return image_store, server, thread
 
 
+def _auto_end_round_if_needed(gate, image_store, gemma_detector, now: float, duration_sec: float) -> bool:
+    duration = max(0.0, float(duration_sec))
+    if not gate.round_active or duration <= 0.0:
+        return False
+    if now - gate.round_start_time < duration:
+        return False
+
+    gate.end_round()
+    tts_kokoro.clear_pending()
+    if gemma_detector is not None:
+        gemma_detector.clear_pending_result()
+    if image_store is not None and hasattr(image_store, "end_round"):
+        image_store.end_round()
+    return True
+
+
 def main() -> int:
     setup_logging()
     log_startup_config()
@@ -146,6 +170,14 @@ def main() -> int:
             image_store, web_server, _web_thread = _start_web_canvas_server()
         clf = classifier.create_classifier()
         logging.info("classifier type: %s", clf.__class__.__name__)
+        gemma_detector = None
+        if settings.GEMMA_ENABLED:
+            labels = getattr(clf, "labels", classifier.load_labels(settings.LABELS_PATH))
+            gemma_detector = gemma_vision.GemmaVisionDetector(labels)
+            logging.info("Gemma vision detector enabled with %s labels", len(labels))
+            print("Loading Gemma vision model. This can take a bit.")
+            gemma_detector.preload()
+            logging.info("Gemma vision model loaded")
         tts_kokoro.prime()
         gate = SpeechGate()
         last_classify_time = 0.0
@@ -159,10 +191,19 @@ def main() -> int:
                 continue
             if key == "r":
                 gate.start_round()
+                if gemma_detector is not None:
+                    gemma_detector.clear_pending_result()
+                if image_store is not None:
+                    image_store.start_round(settings.ROUND_DURATION_SEC)
                 logging.info("round start")
                 print("Round started.")
             elif key == "e":
                 gate.end_round()
+                tts_kokoro.clear_pending()
+                if gemma_detector is not None:
+                    gemma_detector.clear_pending_result()
+                if image_store is not None:
+                    image_store.end_round()
                 logging.info("round end")
                 print("Round ended.")
             elif key == "s":
@@ -192,6 +233,10 @@ def main() -> int:
                 continue
 
             now = time.monotonic()
+            if _auto_end_round_if_needed(gate, image_store, gemma_detector, now, settings.ROUND_DURATION_SEC):
+                logging.info("round auto-ended after %.2f seconds", settings.ROUND_DURATION_SEC)
+                print("Round ended.")
+                continue
             if now - last_classify_time < settings.CLASSIFY_INTERVAL_SEC:
                 time.sleep(0.01)
                 continue
@@ -207,6 +252,16 @@ def main() -> int:
                 else:
                     model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                 result = clf.predict(model_input)
+                gemma_result = None
+                if gemma_detector is not None:
+                    gemma_result = gemma_detector.predict(last_frame, now=now)
+                    if gemma_result is not None:
+                        logging.info(
+                            "gemma detection: %s confidence=%s",
+                            gemma_result["top1"],
+                            gemma_result["confidence"],
+                        )
+                decision_result = gemma_result or result
                 profile_previews = None
                 if settings.PREPROCESS_COMPARE_PROFILES:
                     comparison, profile_previews = _run_profile_comparison(last_frame, clf)
@@ -214,7 +269,7 @@ def main() -> int:
                 if settings.DEBUG_SAVE_FRAMES or settings.PREPROCESS_COMPARE_PROFILES:
                     paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
                     logging.info("saved debug artifacts: %s", paths)
-                decision = gate.update(result)
+                decision = gate.update(decision_result)
                 if settings.DEBUG_PRINT_JSON:
                     print(json.dumps(decision, indent=2))
                 if decision["should_speak"]:

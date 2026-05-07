@@ -83,6 +83,7 @@ class Settings:
     WEB_CANVAS_HOST: str = _get("WEB_CANVAS_HOST", "0.0.0.0", str)
     WEB_CANVAS_PORT: int = _get("WEB_CANVAS_PORT", 8765, int)
     CLASSIFY_INTERVAL_SEC: float = _get("CLASSIFY_INTERVAL_SEC", 0.25, float)
+    ROUND_DURATION_SEC: float = _get("ROUND_DURATION_SEC", 60.0, float)
     AI_FIRST_GUESS_DELAY_SEC: float = _get("AI_FIRST_GUESS_DELAY_SEC", 1.0, float)
     AI_MIN_CONFIDENCE: float = _get("AI_MIN_CONFIDENCE", 0.65, float)
     AI_STABLE_FOR_SEC: float = _get("AI_STABLE_FOR_SEC", 0.5, float)
@@ -91,6 +92,10 @@ class Settings:
     AI_SPEAK_EVERY_SCAN: bool = _get("AI_SPEAK_EVERY_SCAN", False, _bool)
     AI_LOW_CONFIDENCE_TAUNT_SEC: float = _get("AI_LOW_CONFIDENCE_TAUNT_SEC", 2.5, float)
     AI_TAUNT_COOLDOWN_SEC: float = _get("AI_TAUNT_COOLDOWN_SEC", 5.0, float)
+    GEMMA_ENABLED: bool = _get("GEMMA_ENABLED", False, _bool)
+    GEMMA_MODEL: str = _get("GEMMA_MODEL", "google/paligemma-3b-mix-224", str)
+    GEMMA_INTERVAL_SEC: float = _get("GEMMA_INTERVAL_SEC", 2.0, float)
+    GEMMA_CONFIDENCE: float = _get("GEMMA_CONFIDENCE", 0.9, float)
     MODEL_BACKEND: str = _get("MODEL_BACKEND", "stub", _backend)
     MODEL_PATH: Path = _get(
         "MODEL_PATH",

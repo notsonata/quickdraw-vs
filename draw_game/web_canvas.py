@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import uuid
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -87,6 +88,22 @@ HTML_PAGE = """<!doctype html>
       padding: 10px;
       display: grid;
       place-items: center;
+      position: relative;
+    }
+    .timer-badge {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      min-width: 72px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: rgba(17,17,17,0.88);
+      color: white;
+      font-size: 20px;
+      font-weight: 700;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      pointer-events: none;
     }
     canvas {
       width: min(calc(100vw - 20px), calc(100vh - 100px));
@@ -114,6 +131,7 @@ HTML_PAGE = """<!doctype html>
     </div>
     <div class="canvas-wrap">
       <canvas id="board"></canvas>
+      <div id="timerBadge" class="timer-badge">0:00</div>
     </div>
   </div>
   <script>
@@ -123,6 +141,7 @@ HTML_PAGE = """<!doctype html>
     const penButton = document.getElementById('penButton');
     const eraserButton = document.getElementById('eraserButton');
     const clearButton = document.getElementById('clearButton');
+    const timerBadge = document.getElementById('timerBadge');
 
     const clientId = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now() + Math.random());
     const pollIntervalMs = 250;
@@ -134,9 +153,31 @@ HTML_PAGE = """<!doctype html>
     let pendingEvents = [];
     let lastSeenSeq = 0;
     let pollTimer = null;
+    let roundActive = false;
+    let remainingSec = 0;
 
     function setStatus(text) {
       statusNode.textContent = text;
+    }
+
+    function formatTimer(seconds) {
+      const value = Math.max(0, Math.ceil(Number(seconds) || 0));
+      const minutes = Math.floor(value / 60);
+      const remainder = String(value % 60).padStart(2, '0');
+      return `${minutes}:${remainder}`;
+    }
+
+    function setRoundStatus(round) {
+      roundActive = Boolean(round && round.round_active);
+      remainingSec = round ? Number(round.remaining_sec || 0) : 0;
+      if (roundActive) {
+        const text = formatTimer(remainingSec);
+        setStatus(text);
+        timerBadge.textContent = text;
+      } else {
+        setStatus('Round ended');
+        timerBadge.textContent = '0:00';
+      }
     }
 
     function setTool(nextTool) {
@@ -267,12 +308,12 @@ HTML_PAGE = """<!doctype html>
       const nextEvent = pendingEvents[0];
       try {
         const payload = await sendEvent(nextEvent);
+        setRoundStatus(payload.round);
         nextEvent.seq = payload.seq;
         lastSeenSeq = Math.max(lastSeenSeq, payload.seq);
         baseEvents.push(nextEvent);
         pendingEvents.shift();
         redrawCanvas();
-        setStatus('Live');
         if (pendingEvents.length) {
           queueMicrotask(flushPendingEvents);
         }
@@ -290,6 +331,10 @@ HTML_PAGE = """<!doctype html>
     }
 
     function startStroke(event) {
+      if (!roundActive) {
+        setStatus('Round ended');
+        return;
+      }
       event.preventDefault();
       drawing = true;
       lastPoint = getPoint(event);
@@ -331,6 +376,7 @@ HTML_PAGE = """<!doctype html>
           throw new Error('poll failed');
         }
         const payload = await response.json();
+        setRoundStatus(payload.round);
         const events = payload.events || [];
         if (events.length) {
           const pendingKeys = new Set(pendingEvents.map((event) => JSON.stringify(event)));
@@ -350,8 +396,10 @@ HTML_PAGE = """<!doctype html>
           }
           redrawCanvas();
         }
-        if (!pendingEvents.length) {
-          setStatus('Live');
+        if (!pendingEvents.length && !roundActive) {
+          setStatus('Round ended');
+        } else if (!pendingEvents.length && roundActive) {
+          setStatus(formatTimer(remainingSec));
         }
       } catch (_error) {
         if (!pendingEvents.length) {
@@ -392,11 +440,40 @@ def _ensure_cv2() -> None:
 
 
 class SharedCanvasState:
-    def __init__(self, canvas_size: int = 1024) -> None:
+    def __init__(self, canvas_size: int = 1024, now_func=None) -> None:
         self._lock = threading.Lock()
         self._events: list[dict] = []
         self._next_seq = 1
         self._canvas_size = max(64, int(canvas_size))
+        self._now = now_func or time.monotonic
+        self._round_active = False
+        self._round_ends_at = 0.0
+
+    def start_round(self, duration_sec: float) -> None:
+        duration = max(0.0, float(duration_sec))
+        with self._lock:
+            self._round_active = True
+            self._round_ends_at = self._now() + duration if duration > 0.0 else 0.0
+
+    def end_round(self) -> None:
+        with self._lock:
+            self._round_active = False
+            self._round_ends_at = 0.0
+
+    def get_round_status(self) -> dict:
+        with self._lock:
+            active = self._round_active
+            remaining = 0.0
+            if active and self._round_ends_at > 0.0:
+                remaining = max(0.0, self._round_ends_at - self._now())
+                if remaining <= 0.0:
+                    active = False
+                    self._round_active = False
+                    self._round_ends_at = 0.0
+            return {
+                "round_active": active,
+                "remaining_sec": int(round(remaining)),
+            }
 
     def _validate_event(self, event: dict) -> dict:
         event_type = str(event.get("type", "")).strip().lower()
@@ -521,6 +598,7 @@ def create_server(host: str, port: int, canvas_state: SharedCanvasState) -> Thre
                             "status": "ok",
                             "has_image": canvas_state.has_image(),
                             "seq": canvas_state.current_seq(),
+                            "round": canvas_state.get_round_status(),
                         }
                     ),
                     "application/json",
@@ -537,7 +615,13 @@ def create_server(host: str, port: int, canvas_state: SharedCanvasState) -> Thre
                             since = 0
                 self._send_bytes(
                     HTTPStatus.OK,
-                    _json_bytes({"status": "ok", "events": canvas_state.get_events_since(since)}),
+                    _json_bytes(
+                        {
+                            "status": "ok",
+                            "events": canvas_state.get_events_since(since),
+                            "round": canvas_state.get_round_status(),
+                        }
+                    ),
                     "application/json",
                 )
                 return
@@ -567,7 +651,14 @@ def create_server(host: str, port: int, canvas_state: SharedCanvasState) -> Thre
                 return
             self._send_bytes(
                 HTTPStatus.OK,
-                _json_bytes({"status": "ok", "seq": seq, "id": str(uuid.uuid4())}),
+                _json_bytes(
+                    {
+                        "status": "ok",
+                        "seq": seq,
+                        "id": str(uuid.uuid4()),
+                        "round": canvas_state.get_round_status(),
+                    }
+                ),
                 "application/json",
             )
 

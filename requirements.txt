@@ -7,3 +7,6 @@ huggingface_hub
 tensorflow
 kokoro
 sounddevice
+pillow
+torch
+transformers

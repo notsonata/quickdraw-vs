@@ -4,6 +4,7 @@
 
 ```json
 {
+  "source": "quickdraw",
   "top1": "cat",
   "confidence": 0.72,
   "top3": [
@@ -14,11 +15,14 @@
 }
 ```
 
+`source` is optional for legacy classifier backends. Gemma vision results set `"source": "gemma"` and use the same `top1`, `confidence`, `top3`, and `top5` shape after validating the label against the QuickDraw label file.
+
 ## Speech Gate Result
 
 ```json
 {
   "round_active": true,
+  "source": "quickdraw",
   "top1": "bottlecap",
   "confidence": 0.68,
   "top3": [
@@ -32,5 +36,18 @@
   "should_speak": true,
   "reason": "stable_confident_guess",
   "ai_guesses_this_round": 1
+}
+```
+
+## Web Canvas Round Status
+
+`/status`, `/events`, and `/event` responses include:
+
+```json
+{
+  "round": {
+    "round_active": true,
+    "remaining_sec": 42
+  }
 }
 ```

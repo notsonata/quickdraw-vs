@@ -20,7 +20,7 @@ Build a local MVP for a "Humans vs AI Draw Guessing" game. A human artist draws 
 - Google Meet API integration.
 - Speech recognition for human guesses.
 - Automatic winner detection.
-- Gemma, Ollama, YOLO, or LLM commentary.
+- Ollama, YOLO, or free-form LLM commentary.
 - Automatic Canva canvas detection.
 - Web UI or database.
 
@@ -38,4 +38,5 @@ The intended classifier model is `zarqankhn/quickdraw-345-tflite`. Runtime suppo
 - The decision gate enforces first-guess delay, confidence, stability, cooldown, duplicate label, and max guesses.
 - Debug JSON contains `round_active`, `top1`, `confidence`, `top3`, `spoken_label`, `alternate_label`, `stable_ms`, `should_speak`, `reason`, and `ai_guesses_this_round`.
 - Preset phrase generation can use a spoken primary label plus optional alternate label.
+- Optional Gemma/PaliGemma vision can classify raw canvas frames, but must choose only from the QuickDraw label set.
 - TTS failures do not crash the app.

@@ -10,6 +10,30 @@ from draw_game.web_canvas import SharedCanvasState, create_server
 
 
 class SharedCanvasStateTests(unittest.TestCase):
+    def test_round_status_counts_down_and_expires(self):
+        now = 100.0
+        store = SharedCanvasState(now_func=lambda: now)
+
+        store.start_round(30.0)
+        active = store.get_round_status()
+        now = 131.0
+        expired = store.get_round_status()
+
+        self.assertTrue(active["round_active"])
+        self.assertEqual(active["remaining_sec"], 30)
+        self.assertFalse(expired["round_active"])
+        self.assertEqual(expired["remaining_sec"], 0)
+
+    def test_end_round_clears_round_status(self):
+        store = SharedCanvasState(now_func=lambda: 200.0)
+
+        store.start_round(60.0)
+        store.end_round()
+
+        status = store.get_round_status()
+        self.assertFalse(status["round_active"])
+        self.assertEqual(status["remaining_sec"], 0)
+
     def test_get_latest_frame_requires_any_events(self):
         store = SharedCanvasState()
 

@@ -1,5 +1,61 @@
 # Devlog
 
+## 2026-05-07 - Always Taunt Below Minimum Confidence
+
+Summary of low-confidence taunt behavior update.
+
+- **Changes**: When `confidence` falls below `AI_MIN_CONFIDENCE`, the speech gate now emits a taunt immediately (subject to taunt cooldown) instead of waiting for a prolonged low-confidence window.
+- **Impact**: The AI always responds audibly during weak guesses, keeping the banter continuous.
+- **Validation**: Updated unit coverage to confirm immediate taunts and cooldown suppression of repeats.
+
+## 2026-05-07 - Confidence-Stall Top-5 Speech Cycling
+
+Summary of fast-talk confidence-stall speech behavior update.
+
+- **Changes**: Added confidence-stall tracking in the speech gate and, when `top1` confidence stops changing across repeated scans, rotates spoken guesses through the current top-5 candidates instead of repeating only `top1`.
+- **Impact**: Chatty gameplay no longer sounds frozen on one label when the classifier confidence is flat.
+- **Validation**: Added unit coverage that verifies unchanged-confidence scans walk through top-5 labels in order.
+
+## 2026-05-07 - Gemma Alias Handling
+
+Summary of Gemma label validation fix.
+
+- **Changes**: Extended Gemma semantic alias matching so captions containing words like `person` map to the QuickDraw `face` label, and made Gemma fallback candidates prefer drawable labels.
+- **Impact**: Valid Gemma reads are less likely to be discarded, and Gemma speech alternates avoid odd landmark fallbacks when possible.
+- **Validation**: Added focused unit coverage for caption aliases and Gemma fallback candidates.
+
+## 2026-05-07 - Web Canvas Round Timer
+
+Summary of countdown and automatic round-ending behavior.
+
+- **Changes**: Added `ROUND_DURATION_SEC`, shared web-canvas round state, a visible countdown over the drawing field, and main-loop auto-end handling.
+- **Impact**: Starting a round now starts the web timer; the app ends the round automatically when the timer expires.
+- **Validation**: Added unit coverage for timer countdown/expiry and main-loop auto-end behavior.
+
+## 2026-05-07 - Nonblocking Gemma Detection
+
+Summary of Gemma runtime latency fix.
+
+- **Changes**: Moved PaliGemma detection into a single background worker, added raw Gemma output logging, decoded only newly generated tokens, and replaced the giant label-list prompt with a short VQA prompt while keeping QuickDraw label validation.
+- **Impact**: QuickDraw can continue speaking on its normal scan cadence while Gemma works; when a valid Gemma label is ready, it is prioritized on the next loop tick.
+- **Validation**: Added unit coverage that Gemma prediction returns immediately, does not start overlapping model jobs, and uses a short prompt.
+
+## 2026-05-07 - Preload Gemma Weights
+
+Summary of PaliGemma load timing fix.
+
+- **Changes**: Added explicit Gemma model preloading during startup and cleared stale pending Gemma results when a new round starts.
+- **Impact**: The heavy Torch weight load happens before `Ready` instead of during a live round, so the first Gemma guess can arrive during play instead of after the round ends.
+- **Validation**: Added unit coverage for Gemma preload and stale-result clearing.
+
+## 2026-05-07 - Gemma Vision Label Arbiter
+
+Summary of optional local Gemma/PaliGemma vision integration for raw canvas detection.
+
+- **Changes**: Added a local PaliGemma vision adapter that reads canvas frames through Transformers, constrains output to QuickDraw labels, returns the existing classifier JSON shape, and lets Gemma detections bypass duplicate/cooldown speech gates.
+- **Impact**: QuickDraw remains the fast local scanner, while valid Gemma detections are spoken whenever they arrive.
+- **Validation**: Added focused unit coverage for Gemma label validation, frame conversion, and Gemma speech priority.
+
 ## 2026-04-30
 
 - Started MVP scaffolding for the local Humans vs AI Draw Guessing game.
