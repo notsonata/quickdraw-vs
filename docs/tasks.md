@@ -121,3 +121,11 @@ When `confidence < AI_MIN_CONFIDENCE`, speak a taunt immediately (respecting the
 - **Files**: `draw_game/decision.py`, `tests/test_decision.py`, `docs/`
 - **Context**: Low-confidence moments should always produce an audible taunt rather than a quiet skip.
 - **Status**: Done
+
+### [Medium] Log Spoken Lines With Decision JSON
+
+When a spoken line is emitted, log the spoken line followed by the full decision JSON so the log file mirrors the console output sequence.
+
+- **Files**: `draw_game/main.py`, `docs/`
+- **Context**: Troubleshooting spoken guesses is easier when the log includes the exact line and the full decision payload.
+- **Status**: Done

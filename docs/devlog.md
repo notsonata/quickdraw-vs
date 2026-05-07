@@ -1,5 +1,13 @@
 # Devlog
 
+## 2026-05-08 - Log Spoken Lines With Decision JSON
+
+Summary of spoken guess logging format update.
+
+- **Changes**: When a line is spoken, the log now records the spoken line followed by the full decision JSON (in the same order as console output).
+- **Impact**: Log files provide complete context for each spoken line without needing to cross-reference console output.
+- **Validation**: Manual inspection of a spoken guess log entry.
+
 ## 2026-05-07 - Always Taunt Below Minimum Confidence
 
 Summary of low-confidence taunt behavior update.

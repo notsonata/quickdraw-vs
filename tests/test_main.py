@@ -30,6 +30,7 @@ class MainLoopTests(unittest.TestCase):
         ended = main._auto_end_round_if_needed(
             gate,
             canvas_state,
+            None,       # gemma_detector — not relevant to this test
             now=40.1,
             duration_sec=30.0,
         )
@@ -45,6 +46,7 @@ class MainLoopTests(unittest.TestCase):
         ended = main._auto_end_round_if_needed(
             gate,
             canvas_state,
+            None,       # gemma_detector — not relevant to this test
             now=100.0,
             duration_sec=0.0,
         )

@@ -3,8 +3,8 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
-MODEL_PATH="$PROJECT_DIR/draw_game/models/quickdraw-345-tflite/quickdraw_model.tflite"
-LABELS_PATH="$PROJECT_DIR/draw_game/models/quickdraw-345-tflite/labels.txt"
+MODEL_PATH="$PROJECT_DIR/draw_game/models/quickdraw_stroke_tflite/quickdraw_stroke_model_float32.tflite"
+LABELS_PATH="$PROJECT_DIR/draw_game/models/quickdraw_stroke_tflite/labels.json"
 
 cd "$PROJECT_DIR"
 

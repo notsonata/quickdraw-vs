@@ -280,25 +280,29 @@ def main() -> int:
                     paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
                     logging.info("saved debug artifacts: %s", paths)
                 decision = gate.update(decision_result)
-                if settings.DEBUG_PRINT_JSON:
-                    print(json.dumps(decision, indent=2))
                 if decision["should_speak"]:
                     if decision.get("speech_kind") == "taunt":
                         line = responses.make_low_confidence_taunt()
-                        logging.info("spoken taunt: %s", line)
+                        log_label = "spoken taunt"
                     else:
                         line = responses.make_spoken_line(
                             decision["spoken_label"],
                             decision["confidence"],
                             alternate_label=decision.get("alternate_label"),
                         )
-                        logging.info("spoken guess: %s", line)
-                    print(line)
+                        log_label = "spoken guess"
+                    if settings.DEBUG_PRINT_JSON:
+                        log_message = f"{log_label}: {line}\n{line}\n{json.dumps(decision, indent=2)}"
+                    else:
+                        log_message = f"{log_label}: {line}\n{line}"
+                    logging.info(log_message)
                     tts_kokoro.speak(
                         line,
                         interrupt=bool(decision.get("interrupt_current")),
                         speech_kind=str(decision.get("speech_kind", "guess")),
                     )
+                elif settings.DEBUG_PRINT_JSON:
+                    print(json.dumps(decision, indent=2))
             except web_canvas.NoCanvasFrameError:
                 time.sleep(0.05)
             except KeyboardInterrupt:
