@@ -168,6 +168,26 @@ def preprocess_for_web_canvas(
     return _tensor_from_preview(preview), preview
 
 
+def preprocess_image_for_fused(
+    frame: np.ndarray,
+    size: int | None = None,
+) -> np.ndarray:
+    """Prepare a web canvas frame for the fused model's image branch.
+
+    Thin wrapper around preprocess_for_web_canvas that returns only the
+    tensor (not the preview), shaped [1, size, size, 1], float32, [0.0, 1.0].
+    Convention: white background = 1.0, black stroke = 0.0.
+    """
+    try:
+        from .config import settings as _settings
+    except ImportError:
+        from config import settings as _settings  # type: ignore[no-redef]
+
+    resolved_size = size or _settings.MODEL_IMAGE_SIZE
+    tensor, _preview = preprocess_for_web_canvas(frame, input_size=resolved_size)
+    return tensor
+
+
 def preprocess_for_classifier_with_profile(
     frame: np.ndarray,
     profile_name: str,

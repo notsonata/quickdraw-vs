@@ -51,7 +51,7 @@ class PreprocessTests(unittest.TestCase):
 
         for profile in PROFILES:
             with self.subTest(profile=profile):
-                tensor, preview = preprocess_for_classifier_with_profile(frame, profile)
+                tensor, preview = preprocess_for_classifier_with_profile(frame, profile, input_size=28)
                 self.assertEqual(tensor.shape, (1, 28, 28, 1))
                 self.assertEqual(tensor.dtype, np.float32)
                 self.assertEqual(preview.shape, (28, 28))
@@ -64,7 +64,7 @@ class PreprocessTests(unittest.TestCase):
 
         for profile in PROFILES:
             with self.subTest(profile=profile):
-                tensor, _preview = preprocess_for_classifier_with_profile(frame, profile)
+                tensor, _preview = preprocess_for_classifier_with_profile(frame, profile, input_size=28)
                 image = tensor[0, :, :, 0]
                 self.assertGreater(float(image[:4, :4].mean()), 0.9)
                 self.assertLess(float(image.min()), 0.2)
@@ -73,9 +73,9 @@ class PreprocessTests(unittest.TestCase):
         frame = np.full((160, 160, 3), 255, dtype=np.uint8)
         frame[20:140, 78:82] = 0
 
-        current, _ = preprocess_for_classifier_with_profile(frame, "current")
-        before, _ = preprocess_for_classifier_with_profile(frame, "dilate_before_resize")
-        after, _ = preprocess_for_classifier_with_profile(frame, "dilate_after_resize")
+        current, _ = preprocess_for_classifier_with_profile(frame, "current", input_size=28)
+        before, _ = preprocess_for_classifier_with_profile(frame, "dilate_before_resize", input_size=28)
+        after, _ = preprocess_for_classifier_with_profile(frame, "dilate_after_resize", input_size=28)
 
         current_dark = int((current[0, :, :, 0] < 0.5).sum())
         before_dark = int((before[0, :, :, 0] < 0.5).sum())
@@ -88,8 +88,8 @@ class PreprocessTests(unittest.TestCase):
         frame = np.full((220, 220, 3), 255, dtype=np.uint8)
         frame[20:200, 96:124] = 0
 
-        current, _ = preprocess_for_classifier_with_profile(frame, "current")
-        more_margin, _ = preprocess_for_classifier_with_profile(frame, "more_margin")
+        current, _ = preprocess_for_classifier_with_profile(frame, "current", input_size=28)
+        more_margin, _ = preprocess_for_classifier_with_profile(frame, "more_margin", input_size=28)
 
         current_rows = np.where((current[0, :, :, 0] < 0.5).any(axis=1))[0]
         margin_rows = np.where((more_margin[0, :, :, 0] < 0.5).any(axis=1))[0]
@@ -241,4 +241,54 @@ class StrokePreprocessTests(unittest.TestCase):
         result = preprocess_strokes([clear, pen])
         # clear entry has no "points", so it is skipped; pen should produce output
         self.assertIsNotNone(result)
+
+
+from draw_game.preprocess import preprocess_image_for_fused  # noqa: E402
+
+
+class FusedPreprocessTests(unittest.TestCase):
+    """Tests for preprocess_image_for_fused — the fused model's image branch."""
+
+    def _white_frame(self, h=224, w=224):
+        return np.full((h, w, 3), 255, dtype=np.uint8)
+
+    def _frame_with_stroke(self, h=224, w=224):
+        frame = self._white_frame(h, w)
+        frame[80:144, 80:144] = 0   # black square in the middle
+        return frame
+
+    def test_fused_image_preprocess_output_shape(self):
+        tensor = preprocess_image_for_fused(self._white_frame(), size=64)
+        self.assertEqual(tensor.shape, (1, 64, 64, 1))
+
+    def test_fused_image_preprocess_output_dtype(self):
+        tensor = preprocess_image_for_fused(self._white_frame(), size=64)
+        self.assertEqual(tensor.dtype, np.float32)
+
+    def test_fused_image_preprocess_value_range(self):
+        tensor = preprocess_image_for_fused(self._frame_with_stroke(), size=64)
+        self.assertGreaterEqual(float(tensor.min()), 0.0)
+        self.assertLessEqual(float(tensor.max()), 1.0)
+
+    def test_fused_image_white_background_stays_high(self):
+        """Blank white canvas → all tensor values should be near 1.0."""
+        tensor = preprocess_image_for_fused(self._white_frame(), size=64)
+        self.assertGreater(float(tensor.min()), 0.9,
+                           "White background must map to values ≥ 0.9 (convention: 1.0).")
+        self.assertGreater(float(tensor.mean()), 0.95, "Mean must be very high for blank canvas.")
+
+    def test_fused_image_black_stroke_stays_low(self):
+        """Frame with a black region → some tensor values must be < 0.2."""
+        tensor = preprocess_image_for_fused(self._frame_with_stroke(), size=64)
+        self.assertLessEqual(float(tensor.max()), 1.0)
+        self.assertLess(float(tensor.min()), 0.2,
+                        "Black strokes must map to values < 0.2 (convention: 0.0).")
+        self.assertGreater(float(tensor.mean()), 0.5, "Overall mean must still be light (mostly white canvas).")
+
+    def test_saved_fused_debug_preview_is_mostly_white(self):
+        """Ensure the logic used by capture.save_debug_artifacts produces a viewable (mostly white) image."""
+        tensor = preprocess_image_for_fused(self._frame_with_stroke(), size=64)
+        fused_preview = (tensor[0, :, :, 0] * 255.0).astype(np.uint8)
+        self.assertGreater(float(fused_preview.mean()), 200, "Preview should be mostly white pixels (near 255), not near black (0).")
+
 

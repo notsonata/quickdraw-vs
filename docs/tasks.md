@@ -8,6 +8,22 @@ Implement the requested Python MVP pipeline with fixed-region capture, preproces
 - **Context**: The app lets AI guess early from a Canva canvas shared through Google Meet, without integrating with Meet APIs.
 - **Status**: Done
 
+### [High] Loosen SpeechGate Repeat Suppression
+
+Allow the AI to repeat a stable, high-confidence label occasionally while still preventing spam and enforcing per-round caps.
+
+- **Files**: `draw_game/decision.py`, `tests/test_decision.py`, `docs/devlog.md`
+- **Context**: Duplicate suppression was blocking the same label indefinitely, even after long high-confidence stability.
+- **Status**: Done
+
+### [High] Fix Web Canvas Fused Loop NameError
+
+Resolve the missing numpy import that crashes the fused web canvas path during debug logging.
+
+- **Files**: `draw_game/main.py`, `docs/devlog.md`
+- **Context**: The runtime loop hit `NameError: np is not defined` during fused image tensor logging.
+- **Status**: Done
+
 ### [High] Wire QuickDraw TFLite Model
 
 Add Hugging Face download support and a TensorFlow Lite classifier backend for `zarqankhn/quickdraw-345-tflite`, while preserving ONNX and stub fallback behavior.
@@ -128,4 +144,12 @@ When a spoken line is emitted, log the spoken line followed by the full decision
 
 - **Files**: `draw_game/main.py`, `docs/`
 - **Context**: Troubleshooting spoken guesses is easier when the log includes the exact line and the full decision payload.
+- **Status**: Done
+
+### [High] Add Fused Image+Stroke TFLite Model Support
+
+Integrate a dual-input TFLite model (`quickdraw_fused_model_float32.tflite`) that accepts both a 64×64 grayscale image tensor and a [256, 5] stroke-sequence tensor simultaneously, while preserving full backward compatibility with single-input stroke and image models.
+
+- **Files**: `draw_game/config.py`, `draw_game/preprocess.py`, `draw_game/classifier.py`, `draw_game/main.py`, `draw_game/.env`, `tests/test_classifier.py`, `tests/test_preprocess.py`
+- **Context**: The new fused model combines image and stroke features for better 30-class recognition. It must plug into the existing web canvas runtime without breaking stroke-only or image-only paths.
 - **Status**: Done

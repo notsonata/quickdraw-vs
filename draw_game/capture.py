@@ -60,13 +60,17 @@ def save_debug_crop(frame: np.ndarray | None = None, directory: Path | None = No
     return path
 
 
+import json
+
 def save_debug_artifacts(
     raw_frame: np.ndarray | None,
     preview_image: np.ndarray | None,
     profile_previews: dict[str, np.ndarray] | None = None,
     directory: Path | None = None,
+    stroke_events: list[dict] | None = None,
+    fused_image_tensor: np.ndarray | None = None,
 ) -> list[Path]:
-    """Save raw crop, 28x28 preview, and enlarged model preview for inspection."""
+    """Save raw crop, 28x28 preview, enlarged model preview, and stroke events for inspection."""
     if cv2 is None:
         raise RuntimeError("opencv-python is not installed. Run pip install -r requirements.txt.")
     if raw_frame is None:
@@ -97,5 +101,17 @@ def save_debug_artifacts(
             profile_path = target_dir / f"debug-preview-280x280-{profile_name}-{stamp}.png"
             cv2.imwrite(str(profile_path), enlarged)
             written.append(profile_path)
+
+    if stroke_events is not None:
+        strokes_path = target_dir / f"debug-strokes-{stamp}.json"
+        with open(strokes_path, "w") as f:
+            json.dump(stroke_events, f)
+        written.append(strokes_path)
+
+    if fused_image_tensor is not None:
+        fused_preview = (fused_image_tensor[0, :, :, 0] * 255.0).astype(np.uint8)
+        fused_path = target_dir / f"debug-fused-image-{stamp}.png"
+        cv2.imwrite(str(fused_path), fused_preview)
+        written.append(fused_path)
 
     return written

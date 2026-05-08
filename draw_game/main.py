@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import numpy as np
 import select
 import sys
 import termios
@@ -209,16 +210,22 @@ def main() -> int:
                 print("Round ended.")
             elif key == "s":
                 try:
+                    fused_image_tensor = None
                     if settings.CANVAS_SOURCE == "web":
                         last_frame = image_store.get_latest_frame()
-                        last_preview = None  # no image preview in stroke mode
+                        stroke_events = image_store.get_pen_strokes()
+                        if settings.MODEL_INPUT_MODE == "fused":
+                            fused_image_tensor = preprocess.preprocess_image_for_fused(last_frame, size=settings.MODEL_IMAGE_SIZE)
+                            last_preview = None
+                        else:
+                            last_preview = None
                     else:
                         last_frame = capture.capture_canvas_crop()
                         _model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
                     profile_previews = None
                     if settings.PREPROCESS_COMPARE_PROFILES and settings.CANVAS_SOURCE != "web":
                         _comparison, profile_previews = _run_profile_comparison(last_frame, clf)
-                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
+                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews, stroke_events=stroke_events, fused_image_tensor=fused_image_tensor)
                     logging.info("saved debug artifacts: %s", paths)
                     print("Saved debug artifacts:")
                     for path in paths:
@@ -241,23 +248,53 @@ def main() -> int:
                 continue
             last_classify_time = now
 
+            fused_image_tensor = None
+            stroke_events = None
             try:
                 if settings.CANVAS_SOURCE == "web":
-                    # --- stroke-sequence path ---
-                    stroke_events = image_store.get_pen_strokes()
-                    model_input = preprocess.preprocess_strokes(stroke_events)
-                    if model_input is None:
-                        # Too few pen points — wait for more drawing.
-                        time.sleep(0.05)
-                        continue
-                    last_preview = None
-                    # Rendered frame is only needed for Gemma or debug saves.
-                    last_frame = None
-                    if gemma_detector is not None or settings.DEBUG_SAVE_FRAMES:
-                        try:
-                            last_frame = image_store.get_latest_frame()
-                        except web_canvas.NoCanvasFrameError:
-                            last_frame = None
+                    if settings.MODEL_INPUT_MODE == "fused":
+                        # --- fused image+stroke path ---
+                        stroke_events = image_store.get_pen_strokes()
+                        stroke_tensor = preprocess.preprocess_strokes(stroke_events)
+                        if stroke_tensor is None:
+                            # Too few pen points — wait for more drawing.
+                            time.sleep(0.05)
+                            continue
+                        # Only render the image after the stroke tensor is valid.
+                        last_frame = image_store.get_latest_frame()
+                        image_tensor = preprocess.preprocess_image_for_fused(
+                            last_frame, size=settings.MODEL_IMAGE_SIZE
+                        )
+                        logging.debug(
+                            "Fused image tensor: shape=%s dtype=%s min=%.4f max=%.4f mean=%.4f <0.2=%d >0.8=%d",
+                            image_tensor.shape,
+                            image_tensor.dtype.name,
+                            float(np.min(image_tensor)),
+                            float(np.max(image_tensor)),
+                            float(np.mean(image_tensor)),
+                            int(np.sum(image_tensor < 0.2)),
+                            int(np.sum(image_tensor > 0.8)),
+                        )
+                        last_preview = None
+                        fused_image_tensor = image_tensor
+                        model_input = {"image": image_tensor, "stroke": stroke_tensor}
+                    else:
+                        # --- stroke-only path ---
+                        stroke_events = image_store.get_pen_strokes()
+                        model_input = preprocess.preprocess_strokes(stroke_events)
+                        if model_input is None:
+                            # Too few pen points — wait for more drawing.
+                            time.sleep(0.05)
+                            continue
+                        last_preview = None
+                        # Rendered frame is only needed for Gemma or debug saves.
+                        last_frame = None
+                        if gemma_detector is not None or settings.DEBUG_SAVE_FRAMES:
+                            try:
+                                last_frame = image_store.get_latest_frame()
+                            except web_canvas.NoCanvasFrameError:
+                                last_frame = None
+
                 else:
                     last_frame = capture.capture_canvas_crop()
                     model_input, last_preview = preprocess.preprocess_for_classifier(last_frame)
@@ -277,7 +314,7 @@ def main() -> int:
                     comparison, profile_previews = _run_profile_comparison(last_frame, clf)
                     print(json.dumps(comparison, indent=2))
                 if settings.DEBUG_SAVE_FRAMES or settings.PREPROCESS_COMPARE_PROFILES:
-                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews)
+                    paths = capture.save_debug_artifacts(last_frame, last_preview, profile_previews, stroke_events=stroke_events, fused_image_tensor=fused_image_tensor)
                     logging.info("saved debug artifacts: %s", paths)
                 decision = gate.update(decision_result)
                 if decision["should_speak"]:

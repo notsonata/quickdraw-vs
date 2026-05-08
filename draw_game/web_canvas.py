@@ -597,13 +597,16 @@ def create_server(host: str, port: int, canvas_state: SharedCanvasState) -> Thre
             body: bytes,
             content_type: str,
         ) -> None:
-            self.send_response(int(status))
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(int(status))
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
 
         def _parse_json_body(self) -> dict:
             length = int(self.headers.get("Content-Length", "0"))

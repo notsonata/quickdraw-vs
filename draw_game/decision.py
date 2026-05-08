@@ -23,10 +23,12 @@ class SpeechGate:
         self.last_label_since = 0.0
         self.low_confidence_since = 0.0
         self.last_spoken_label: str | None = None
+        self.spoken_label_counts: dict[str, int] = {}
         self.last_speech_time = -1_000_000.0
         self.last_taunt_time = -1_000_000.0
         self.ai_guesses_this_round = 0
         self.recent_top_candidates: deque[list[list[str | float]]] = deque(maxlen=5)
+        self.recent_spoken_labels: deque[str] = deque(maxlen=3)
 
     def start_round(self) -> None:
         now = self._now()
@@ -40,10 +42,12 @@ class SpeechGate:
         self.last_label_since = now
         self.low_confidence_since = now
         self.last_spoken_label = None
+        self.spoken_label_counts = {}
         self.last_speech_time = -1_000_000.0
         self.last_taunt_time = -1_000_000.0
         self.ai_guesses_this_round = 0
         self.recent_top_candidates.clear()
+        self.recent_spoken_labels.clear()
 
     def end_round(self) -> None:
         self.round_active = False
@@ -53,8 +57,10 @@ class SpeechGate:
         self.top1_spoken_for_current_label = False
         self.top1_repeat_count = 0
         self.last_spoken_label = None
+        self.spoken_label_counts = {}
         self.ai_guesses_this_round = 0
         self.recent_top_candidates.clear()
+        self.recent_spoken_labels.clear()
 
     def _update_recent_candidates(self, candidates: list) -> None:
         normalized: list[list[str | float]] = []
@@ -96,6 +102,9 @@ class SpeechGate:
             if not isinstance(item, (list, tuple)) or len(item) < 2:
                 continue
             label = str(item[0])
+            score = float(item[1])
+            if score < settings.AI_MIN_SPOKEN_LABEL_CONFIDENCE or score <= 0.0:
+                continue
             if label not in ordered_labels:
                 ordered_labels.append(label)
 
@@ -106,7 +115,9 @@ class SpeechGate:
             and getattr(settings, "AI_SPEAK_EVERY_SCAN", False)
             and self.top1_spoken_for_current_label
         ):
-            fallback_labels = [label for label in ordered_labels if label != top1]
+            fallback_labels = [label for label in ordered_labels if label != top1 and label not in self.recent_spoken_labels]
+            if not fallback_labels:
+                fallback_labels = [label for label in ordered_labels if label != top1]
             if fallback_labels:
                 fallback_index = (self.confidence_stall_count - 1) % len(fallback_labels)
                 primary_label = fallback_labels[fallback_index]
@@ -114,7 +125,9 @@ class SpeechGate:
                 alternate_label = top1
                 used_fallback = True
         elif repeated_label and confidence < major_confidence:
-            fallback_labels = [label for label in ordered_labels if label != self.last_spoken_label]
+            fallback_labels = [label for label in ordered_labels if label != self.last_spoken_label and label not in self.recent_spoken_labels]
+            if not fallback_labels:
+                fallback_labels = [label for label in ordered_labels if label != self.last_spoken_label]
             if fallback_labels:
                 fallback_index = min(max(self.top1_repeat_count - 1, 0), len(fallback_labels) - 1)
                 primary_label = fallback_labels[fallback_index]
@@ -125,7 +138,8 @@ class SpeechGate:
         if len(ranked) > 1 and not used_fallback:
             secondary_label, secondary_score = ranked[1]
             if secondary_score >= max(0.08, primary_score * 0.78) and secondary_label != primary_label:
-                alternate_label = secondary_label
+                if secondary_label in ordered_labels:
+                    alternate_label = secondary_label
 
         current_second = None
         if len(top_candidates) > 1 and isinstance(top_candidates[1], (list, tuple)) and len(top_candidates[1]) >= 2:
@@ -133,9 +147,10 @@ class SpeechGate:
             current_second_confidence = float(top_candidates[1][1])
             if (
                 not used_fallback
-                and
-                current_second != primary_label
+                and current_second != primary_label
                 and current_second_confidence >= max(0.12, confidence * 0.82)
+                and current_second_confidence >= settings.AI_MIN_SPOKEN_LABEL_CONFIDENCE
+                and current_second_confidence > 0.0
             ):
                 alternate_label = current_second
 
@@ -168,16 +183,20 @@ class SpeechGate:
             self.last_top1_confidence = confidence
         spoken_label, alternate_label = self._choose_spoken_labels(top1, confidence, top5)
         stable_for_sec = max(0.0, now - self.last_label_since)
-        if confidence < settings.AI_MIN_CONFIDENCE:
+        if confidence <= 0.0 or confidence < settings.AI_MIN_CONFIDENCE:
             if self.low_confidence_since == 0.0:
                 self.low_confidence_since = now
         else:
             self.low_confidence_since = now
         low_confidence_for_sec = max(0.0, now - self.low_confidence_since)
 
-        reason = "stable_confident_guess"
+        reason = "normal_guess"
         should_speak = True
         speech_kind = "guess"
+        repeat_cap = getattr(settings, "AI_MAX_REPEAT_SAME_LABEL_PER_ROUND", 3)
+        repeat_cooldown_sec = getattr(settings, "AI_REPEAT_LABEL_COOLDOWN_SEC", 10.0)
+        high_confidence_repeat = getattr(settings, "AI_HIGH_CONFIDENCE_REPEAT", 0.85)
+        spoken_label_count = self.spoken_label_counts.get(spoken_label, 0)
 
         if not self.round_active:
             reason = "round_not_active"
@@ -185,7 +204,26 @@ class SpeechGate:
         elif source == "gemma":
             reason = "gemma_detection"
             should_speak = True
-        elif confidence < settings.AI_MIN_CONFIDENCE:
+        elif self.ai_guesses_this_round >= settings.MAX_AI_GUESSES_PER_ROUND:
+            reason = "max_guesses_per_round"
+            should_speak = False
+        elif spoken_label_count >= repeat_cap:
+            reason = "same_label_repeat_cap"
+            should_speak = False
+        elif spoken_label == self.last_spoken_label:
+            if now - self.last_speech_time < repeat_cooldown_sec:
+                reason = "duplicate_label_cooldown"
+                should_speak = False
+            elif confidence < high_confidence_repeat:
+                reason = "low_confidence"
+                should_speak = False
+            else:
+                reason = "same_label_repeat_allowed"
+                should_speak = True
+        elif now - self.last_speech_time < settings.AI_SPEECH_COOLDOWN_SEC:
+            reason = "cooldown"
+            should_speak = False
+        elif confidence <= 0.0 or confidence < settings.AI_MIN_CONFIDENCE:
             if now - self.last_taunt_time >= getattr(settings, "AI_TAUNT_COOLDOWN_SEC", 5.0):
                 reason = "low_confidence_taunt"
                 speech_kind = "taunt"
@@ -205,21 +243,14 @@ class SpeechGate:
         elif stable_for_sec < settings.AI_STABLE_FOR_SEC:
             reason = "not_stable"
             should_speak = False
-        elif now - self.last_speech_time < settings.AI_SPEECH_COOLDOWN_SEC:
-            reason = "cooldown"
-            should_speak = False
-        elif self.ai_guesses_this_round >= settings.MAX_AI_GUESSES_PER_ROUND:
-            reason = "max_guesses_reached"
-            should_speak = False
-        elif top1 == self.last_spoken_label:
-            reason = "duplicate_label"
-            should_speak = False
 
         if should_speak:
             if speech_kind == "taunt":
                 self.last_taunt_time = now
             else:
                 self.last_spoken_label = spoken_label
+                self.spoken_label_counts[spoken_label] = spoken_label_count + 1
+                self.recent_spoken_labels.append(spoken_label)
                 if spoken_label == top1:
                     self.top1_spoken_for_current_label = True
                 self.last_speech_time = now

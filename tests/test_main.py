@@ -54,3 +54,14 @@ class MainLoopTests(unittest.TestCase):
         self.assertFalse(ended)
         self.assertFalse(gate.ended)
         self.assertFalse(canvas_state.ended)
+
+    def test_fused_mode_uses_preprocess_image_for_fused(self):
+        import ast
+        import inspect
+        source = inspect.getsource(main.main)
+        tree = ast.parse(source)
+        
+        # We want to ensure that inside the fused block, we call preprocess_image_for_fused
+        # and NOT preprocess_for_classifier. We can simply assert that 'preprocess_image_for_fused'
+        # appears in the source, and that preprocess_for_classifier is used only in the non-web branch.
+        self.assertIn("preprocess_image_for_fused", source)

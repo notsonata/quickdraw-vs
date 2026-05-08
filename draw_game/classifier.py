@@ -151,6 +151,7 @@ class TFLiteClassifier:
         self.interpreter.allocate_tensors()
         self.input_details = self.interpreter.get_input_details()
         self.output_details = self.interpreter.get_output_details()
+        # For single-input models keep a shortcut; multi-input models use _set_inputs().
         self.input_index = self.input_details[0]["index"]
         self.output_index = self.output_details[0]["index"]
         self._print_diagnostics()
@@ -191,39 +192,35 @@ class TFLiteClassifier:
         if x.ndim == 3:
             return x
 
-        # Image input: reshape to [1, H, W, C].
-        if x.shape == (settings.MODEL_INPUT_H, settings.MODEL_INPUT_W):
+        # Image input: infer expected shape from the model's first input tensor.
+        # This avoids depending on MODEL_INPUT_W/H settings for single-input models
+        # of any size (e.g. legacy 28x28, fused image branch at 64x64, etc.).
+        detail_shape = tuple(self.input_details[0]["shape"].tolist())  # e.g. (1, H, W, C)
+        if len(detail_shape) == 4:
+            _, exp_h, exp_w, exp_c = detail_shape
+        else:
+            # Unusual shape: fall back to settings
+            exp_h = settings.MODEL_INPUT_H
+            exp_w = settings.MODEL_INPUT_W
+            exp_c = settings.MODEL_INPUT_CHANNELS
+
+        if x.shape == (exp_h, exp_w):
             x = x[None, :, :, None]
-        elif x.shape == (settings.MODEL_INPUT_H, settings.MODEL_INPUT_W, 1):
+        elif x.shape == (exp_h, exp_w, 1):
             x = x[None, :, :, :]
-        elif x.shape == (
-            1,
-            settings.MODEL_INPUT_H,
-            settings.MODEL_INPUT_W,
-            settings.MODEL_INPUT_CHANNELS,
-        ):
+        elif x.shape == (1, exp_h, exp_w, exp_c):
             pass
         else:
             try:
-                x = x.reshape(
-                    1,
-                    settings.MODEL_INPUT_H,
-                    settings.MODEL_INPUT_W,
-                    settings.MODEL_INPUT_CHANNELS,
-                )
+                x = x.reshape(1, exp_h, exp_w, exp_c)
             except ValueError as exc:
                 raise ValueError(
                     f"TFLite input shape {x.shape} is not a valid "
                     "stroke sequence [1, seq_len, features] or image "
-                    f"[{settings.MODEL_INPUT_H}, {settings.MODEL_INPUT_W}]."
+                    f"[{exp_h}, {exp_w}]."
                 ) from exc
 
-        expected_shape = (
-            1,
-            settings.MODEL_INPUT_H,
-            settings.MODEL_INPUT_W,
-            settings.MODEL_INPUT_CHANNELS,
-        )
+        expected_shape = (1, exp_h, exp_w, exp_c)
         if x.shape != expected_shape:
             raise ValueError(f"TFLite input shape must be {expected_shape}; got {x.shape}.")
 
@@ -237,9 +234,87 @@ class TFLiteClassifier:
             x = np.clip(x, 0.0, 1.0)
         return x.astype(np.float32)
 
-    def predict(self, model_input: np.ndarray) -> dict:
-        x = self._prepare_input(model_input)
-        self.interpreter.set_tensor(self.input_index, x)
+
+    def _set_inputs(self, model_input: np.ndarray | dict) -> None:
+        """Route model_input to one or more interpreter tensor slots.
+
+        Accepts:
+          - np.ndarray  — single-input path; only valid when model has exactly one input.
+          - dict        — multi-input path; keys "image" and "stroke";
+                          routed by tensor name substring, then by shape ndim.
+        """
+        if isinstance(model_input, np.ndarray):
+            if len(self.input_details) >= 2:
+                raise RuntimeError(
+                    f"This TFLite model has {len(self.input_details)} inputs and requires a dict "
+                    'input: {"image": image_tensor, "stroke": stroke_tensor}. '
+                    "Passing a single np.ndarray is only valid for single-input models."
+                )
+            x = self._prepare_input(model_input)
+            self.interpreter.set_tensor(self.input_index, x)
+            return
+
+        if not isinstance(model_input, dict):
+            raise TypeError(
+                f"model_input must be np.ndarray or dict, got {type(model_input).__name__}."
+            )
+
+        image_tensor = model_input.get("image")
+        stroke_tensor = model_input.get("stroke")
+
+        for detail in self.input_details:
+            idx = detail["index"]
+            name = detail.get("name", "").lower()
+            expected_shape = tuple(detail["shape"].tolist())
+
+            # --- name-based routing (primary) ---
+            if "image" in name:
+                if image_tensor is None:
+                    raise RuntimeError(
+                        f"Tensor '{detail['name']}' (index {idx}) expects an image input, "
+                        "but 'image' key is missing from the input dict."
+                    )
+                tensor = np.asarray(image_tensor, dtype=np.float32)
+
+            elif "stroke" in name:
+                if stroke_tensor is None:
+                    raise RuntimeError(
+                        f"Tensor '{detail['name']}' (index {idx}) expects a stroke input, "
+                        "but 'stroke' key is missing from the input dict."
+                    )
+                tensor = np.asarray(stroke_tensor, dtype=np.float32)
+
+            else:
+                # --- shape-based fallback ---
+                # Use the model's actual shape ndim as the discriminator:
+                #   4-D (1, H, W, C) → image tensor
+                #   3-D (1, seq, feat) → stroke sequence tensor
+                # This avoids hardcoding config values that may not match the model.
+                if len(expected_shape) == 4 and image_tensor is not None:
+                    tensor = np.asarray(image_tensor, dtype=np.float32)
+                elif len(expected_shape) == 3 and stroke_tensor is not None:
+                    tensor = np.asarray(stroke_tensor, dtype=np.float32)
+                else:
+                    raise RuntimeError(
+                        f"Cannot route input to tensor '{detail['name']}' (index {idx}): "
+                        f"name does not contain 'image' or 'stroke', "
+                        f"and shape {expected_shape} (ndim={len(expected_shape)}) "
+                        "does not unambiguously identify an image (4-D) or stroke (3-D) tensor. "
+                        'Provide a tensor name containing \'image\' or \'stroke\'.'
+                    )
+
+            # --- shape validation ---
+            actual_shape = tensor.shape
+            if actual_shape != expected_shape:
+                raise RuntimeError(
+                    f"Shape mismatch for tensor '{detail['name']}' (index {idx}): "
+                    f"expected {expected_shape}, got {actual_shape}."
+                )
+
+            self.interpreter.set_tensor(idx, tensor)
+
+    def predict(self, model_input: np.ndarray | dict) -> dict:
+        self._set_inputs(model_input)
         self.interpreter.invoke()
         output = np.asarray(self.interpreter.get_tensor(self.output_index), dtype=np.float32)
         probabilities = output.reshape(-1)

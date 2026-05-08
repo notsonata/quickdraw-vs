@@ -50,6 +50,14 @@ def _backend(value: str) -> str:
     return "stub"
 
 
+def _input_mode(value: str) -> str:
+    mode = value.strip().lower()
+    if mode in {"image", "stroke", "fused"}:
+        return mode
+    print(f"Invalid MODEL_INPUT_MODE={value!r}; using 'stroke'.")
+    return "stroke"
+
+
 def _canvas_source(value: str) -> str:
     source = value.strip().lower()
     if source in {"screen", "web"}:
@@ -86,12 +94,16 @@ class Settings:
     ROUND_DURATION_SEC: float = _get("ROUND_DURATION_SEC", 60.0, float)
     AI_FIRST_GUESS_DELAY_SEC: float = _get("AI_FIRST_GUESS_DELAY_SEC", 1.0, float)
     AI_MIN_CONFIDENCE: float = _get("AI_MIN_CONFIDENCE", 0.65, float)
+    AI_MIN_SPOKEN_LABEL_CONFIDENCE: float = _get("AI_MIN_SPOKEN_LABEL_CONFIDENCE", 0.15, float)
     AI_STABLE_FOR_SEC: float = _get("AI_STABLE_FOR_SEC", 0.5, float)
     AI_SPEECH_COOLDOWN_SEC: float = _get("AI_SPEECH_COOLDOWN_SEC", 2.5, float)
     MAX_AI_GUESSES_PER_ROUND: int = _get("MAX_AI_GUESSES_PER_ROUND", 3, int)
     AI_SPEAK_EVERY_SCAN: bool = _get("AI_SPEAK_EVERY_SCAN", False, _bool)
     AI_LOW_CONFIDENCE_TAUNT_SEC: float = _get("AI_LOW_CONFIDENCE_TAUNT_SEC", 2.5, float)
     AI_TAUNT_COOLDOWN_SEC: float = _get("AI_TAUNT_COOLDOWN_SEC", 5.0, float)
+    AI_REPEAT_LABEL_COOLDOWN_SEC: float = _get("AI_REPEAT_LABEL_COOLDOWN_SEC", 10.0, float)
+    AI_HIGH_CONFIDENCE_REPEAT: float = _get("AI_HIGH_CONFIDENCE_REPEAT", 0.85, float)
+    AI_MAX_REPEAT_SAME_LABEL_PER_ROUND: int = _get("AI_MAX_REPEAT_SAME_LABEL_PER_ROUND", 3, int)
     GEMMA_ENABLED: bool = _get("GEMMA_ENABLED", False, _bool)
     GEMMA_MODEL: str = _get("GEMMA_MODEL", "google/paligemma-3b-mix-224", str)
     GEMMA_INTERVAL_SEC: float = _get("GEMMA_INTERVAL_SEC", 2.0, float)
@@ -115,6 +127,9 @@ class Settings:
     # Stroke-sequence model settings
     MODEL_SEQ_LEN: int = _get("MODEL_SEQ_LEN", 128, int)
     MODEL_FEATURES: int = _get("MODEL_FEATURES", 5, int)
+    # Fused model settings
+    MODEL_INPUT_MODE: str = _get("MODEL_INPUT_MODE", "stroke", _input_mode)
+    MODEL_IMAGE_SIZE: int = _get("MODEL_IMAGE_SIZE", 64, int)
     PREPROCESS_PROFILE: str = _get("PREPROCESS_PROFILE", "current", _preprocess_profile)
     PREPROCESS_COMPARE_PROFILES: bool = _get("PREPROCESS_COMPARE_PROFILES", False, _bool)
     PREPROCESS_INTERMEDIATE_SIZE: int = _get("PREPROCESS_INTERMEDIATE_SIZE", 64, int)

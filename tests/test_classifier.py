@@ -446,3 +446,314 @@ class StrokeModelClassifierTests(unittest.TestCase):
         print(f"[smoke] top1={prediction['top1']}  confidence={prediction['confidence']:.4f}")
         print(f"[smoke] top3={prediction['top3']}")
 
+
+class FakeFusedInterpreter:
+    """Fake TFLite interpreter simulating the 30-class fused image+stroke model.
+
+    Two inputs with real-world tensor names matching the exported model.
+    """
+
+    NUM_CLASSES = 30
+    IMAGE_SIZE = 64
+    SEQ_LEN = 256
+    FEATURES = 5
+
+    def __init__(self, model_path):
+        self.model_path = model_path
+        self._tensors: dict = {}
+
+    def allocate_tensors(self):
+        return None
+
+    def get_input_details(self):
+        return [
+            {
+                "index": 0,
+                "name": "serving_default_image_input:0",
+                "shape": np.array([1, self.IMAGE_SIZE, self.IMAGE_SIZE, 1]),
+                "dtype": np.float32,
+            },
+            {
+                "index": 1,
+                "name": "serving_default_stroke_input:0",
+                "shape": np.array([1, self.SEQ_LEN, self.FEATURES]),
+                "dtype": np.float32,
+            },
+        ]
+
+    def get_output_details(self):
+        return [{"index": 2, "shape": np.array([1, self.NUM_CLASSES]), "dtype": np.float32}]
+
+    def set_tensor(self, index, value):
+        self._tensors[index] = value
+
+    def invoke(self):
+        return None
+
+    def get_tensor(self, index):
+        output = np.zeros((1, self.NUM_CLASSES), dtype=np.float32)
+        output[0, 3] = 0.75   # "cat" at index 3
+        output[0, 4] = 0.15   # "dog" at index 4
+        output[0, 0] = 0.06   # "The Mona Lisa" at index 0
+        return output
+
+
+class FakeFusedInterpreterShapeOnly:
+    """Same model but with generic tensor names — forces shape-based fallback routing."""
+
+    NUM_CLASSES = 30
+    IMAGE_SIZE = 64
+    SEQ_LEN = 256
+    FEATURES = 5
+
+    def __init__(self, model_path):
+        self.model_path = model_path
+        self._tensors: dict = {}
+
+    def allocate_tensors(self):
+        return None
+
+    def get_input_details(self):
+        return [
+            {
+                "index": 0,
+                "name": "input_0",  # generic — no "image" / "stroke" substring
+                "shape": np.array([1, self.IMAGE_SIZE, self.IMAGE_SIZE, 1]),
+                "dtype": np.float32,
+            },
+            {
+                "index": 1,
+                "name": "input_1",  # generic
+                "shape": np.array([1, self.SEQ_LEN, self.FEATURES]),
+                "dtype": np.float32,
+            },
+        ]
+
+    def get_output_details(self):
+        return [{"index": 2, "shape": np.array([1, self.NUM_CLASSES]), "dtype": np.float32}]
+
+    def set_tensor(self, index, value):
+        self._tensors[index] = value
+
+    def invoke(self):
+        return None
+
+    def get_tensor(self, index):
+        output = np.zeros((1, self.NUM_CLASSES), dtype=np.float32)
+        output[0, 2] = 0.88  # "banana" at index 2
+        return output
+
+
+class FakeFusedInterpreterAmbiguous:
+    """Inputs with 2-D shapes — neither image (4-D) nor stroke (3-D) by ndim.
+
+    The shape-based fallback cannot route these, so predict() must raise.
+    """
+
+    NUM_CLASSES = 30
+
+    def __init__(self, model_path):
+        self.model_path = model_path
+
+    def allocate_tensors(self):
+        return None
+
+    def get_input_details(self):
+        return [
+            {
+                "index": 0,
+                "name": "weird_input_a",
+                "shape": np.array([64, 64]),    # 2-D: not image (4-D) nor stroke (3-D)
+                "dtype": np.float32,
+            },
+            {
+                "index": 1,
+                "name": "weird_input_b",
+                "shape": np.array([256, 5]),    # 2-D: same — unroutable
+                "dtype": np.float32,
+            },
+        ]
+
+    def get_output_details(self):
+        return [{"index": 2, "shape": np.array([1, self.NUM_CLASSES]), "dtype": np.float32}]
+
+    def set_tensor(self, index, value):
+        pass
+
+    def invoke(self):
+        return None
+
+    def get_tensor(self, index):
+        return np.zeros((1, self.NUM_CLASSES), dtype=np.float32)
+
+
+FUSED_LABELS = [
+    "The Mona Lisa", "apple", "banana", "cat", "dog", "fish", "bird",
+    "airplane", "car", "bicycle", "bus", "tree", "flower", "house", "chair",
+    "table", "cup", "fork", "umbrella", "star", "moon", "sun", "cloud",
+    "crown", "pizza", "ice cream", "book", "clock", "eye", "face",
+]
+
+
+class FusedModelClassifierTests(unittest.TestCase):
+    """Tests for the fused image+stroke multi-input TFLite integration."""
+
+    def _make_clf(self, factory=FakeFusedInterpreter):
+        with TemporaryDirectory() as tmp:
+            labels_path = Path(tmp) / "labels.json"
+            model_path = Path(tmp) / "fused_model.tflite"
+            labels_path.write_text(_json.dumps(FUSED_LABELS), encoding="utf-8")
+            model_path.write_bytes(b"not a real model")
+            return TFLiteClassifier(str(model_path), str(labels_path), interpreter_factory=factory)
+
+    def _valid_inputs(self):
+        image_tensor = np.ones((1, 64, 64, 1), dtype=np.float32) * 0.95
+        stroke_tensor = np.zeros((1, 256, 5), dtype=np.float32)
+        stroke_tensor[0, 0] = [0.01, 0.02, 1.0, 0.0, 0.0]
+        stroke_tensor[0, 1] = [0.0, 0.0, 0.0, 1.0, 0.0]
+        stroke_tensor[0, 2] = [0.0, 0.0, 0.0, 0.0, 1.0]
+        return image_tensor, stroke_tensor
+
+    # --- routing by tensor name ---
+
+    def test_fused_routing_by_tensor_name_returns_prediction(self):
+        clf = self._make_clf(FakeFusedInterpreter)
+        image_tensor, stroke_tensor = self._valid_inputs()
+        result = clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+        self.assertIn("top1", result)
+        self.assertIn("confidence", result)
+        self.assertEqual(len(result["top3"]), 3)
+        self.assertEqual(len(result["top5"]), 5)
+        self.assertEqual(result["top1"], "cat")    # FakeFusedInterpreter sets index 3 highest; FUSED_LABELS[3]="cat"
+
+    def test_fused_routing_by_tensor_name_feeds_both_tensors(self):
+        clf = self._make_clf(FakeFusedInterpreter)
+        interp = clf.interpreter
+        image_tensor, stroke_tensor = self._valid_inputs()
+        clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+        # Both tensor slots must have been written
+        self.assertIn(0, interp._tensors)
+        self.assertIn(1, interp._tensors)
+
+    # --- routing by shape fallback ---
+
+    def test_fused_routing_by_shape_fallback_returns_prediction(self):
+        clf = self._make_clf(FakeFusedInterpreterShapeOnly)
+        image_tensor, stroke_tensor = self._valid_inputs()
+        result = clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+        self.assertIn("top1", result)
+        self.assertEqual(result["top1"], "banana")   # index 2 in FUSED_LABELS
+
+    # --- ambiguous routing raises ---
+
+    def test_fused_ambiguous_routing_raises_runtime_error(self):
+        """Inputs with 2-D shapes cannot be routed by ndim and must raise."""
+        clf = self._make_clf(FakeFusedInterpreterAmbiguous)
+        image_tensor, stroke_tensor = self._valid_inputs()
+        with self.assertRaises(RuntimeError) as ctx:
+            clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+        self.assertIn("Cannot route", str(ctx.exception))
+
+    # --- shape mismatch raises ---
+
+    def test_fused_shape_mismatch_raises_with_clear_message(self):
+        clf = self._make_clf(FakeFusedInterpreter)
+        wrong_image = np.ones((1, 28, 28, 1), dtype=np.float32)   # wrong size
+        stroke_tensor = self._valid_inputs()[1]
+        with self.assertRaises(RuntimeError) as ctx:
+            clf.predict({"image": wrong_image, "stroke": stroke_tensor})
+        self.assertIn("Shape mismatch", str(ctx.exception))
+
+    # --- single ndarray on multi-input model raises ---
+
+    def test_single_ndarray_raises_for_multi_input_model(self):
+        """np.ndarray passed to a multi-input (fused) model must raise RuntimeError."""
+        clf = self._make_clf(FakeFusedInterpreter)
+        x = np.ones((1, 64, 64, 1), dtype=np.float32)
+        with self.assertRaises(RuntimeError) as ctx:
+            clf.predict(x)
+        self.assertIn("requires a dict", str(ctx.exception))
+
+    # --- single ndarray still works for single-input models ---
+
+    def test_single_ndarray_input_still_works_on_single_input_model(self):
+        """Single np.ndarray must still work for single-input models."""
+        with TemporaryDirectory() as tmp:
+            labels_path = Path(tmp) / "labels.json"
+            model_path = Path(tmp) / "stroke_model.tflite"
+            classes = [f"class_{i}" for i in range(29)]
+            labels_path.write_text(_json.dumps(classes), encoding="utf-8")
+            model_path.write_bytes(b"not a real model")
+            clf = TFLiteClassifier(
+                str(model_path), str(labels_path),
+                interpreter_factory=FakeInterpreterStroke,
+            )
+        x = np.zeros((1, 128, 5), dtype=np.float32)
+        result = clf.predict(x)
+        self.assertIn("top1", result)
+
+    # --- output label count validation ---
+
+    def test_fused_output_label_count_validated_against_labels_json(self):
+        """If output size ≠ len(labels), predict must raise."""
+        with TemporaryDirectory() as tmp:
+            # Give it 10 labels but the fake interpreter outputs 30
+            labels_path = Path(tmp) / "labels.json"
+            model_path = Path(tmp) / "fused_model.tflite"
+            labels_path.write_text(_json.dumps([f"c{i}" for i in range(10)]), encoding="utf-8")
+            model_path.write_bytes(b"not a real model")
+            clf = TFLiteClassifier(
+                str(model_path), str(labels_path),
+                interpreter_factory=FakeFusedInterpreter,
+            )
+        image_tensor, stroke_tensor = self._valid_inputs()
+        with self.assertRaises(ValueError) as ctx:
+            clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+        self.assertIn("Expected output size", str(ctx.exception))
+
+    # --- real fused TFLite smoke test ---
+
+    def test_fused_tflite_smoke_real_model(self):
+        """Load the real fused model and run a dummy prediction if the file exists."""
+        model_path = Path("draw_game/models/quickdraw_fused_tflite/quickdraw_fused_model_float32.tflite")
+        labels_path = Path("draw_game/models/quickdraw_fused_tflite/labels.json")
+        if not model_path.exists() or not labels_path.exists():
+            self.skipTest("Fused TFLite model files not present")
+
+        try:
+            clf = TFLiteClassifier(str(model_path), str(labels_path))
+        except RuntimeError as exc:
+            self.skipTest(f"TFLite interpreter unavailable: {exc}")
+
+        # Dummy white image with a simulated stroke pixel in the centre
+        image_tensor = np.ones((1, 64, 64, 1), dtype=np.float32)
+        image_tensor[0, 28:36, 28:36, 0] = 0.0   # black patch
+
+        # Minimal stroke: horizontal pen strokes
+        stroke_tensor = np.zeros((1, 256, 5), dtype=np.float32)
+        for t in range(10):
+            stroke_tensor[0, t] = [0.01, 0.0, 1.0, 0.0, 0.0]
+        stroke_tensor[0, 10] = [0.0, 0.0, 0.0, 1.0, 0.0]   # pen up
+        stroke_tensor[0, 11] = [0.0, 0.0, 0.0, 0.0, 1.0]   # end token
+
+        result = clf.predict({"image": image_tensor, "stroke": stroke_tensor})
+
+        self.assertIn("top1", result)
+        self.assertIn("confidence", result)
+        self.assertIn("top3", result)
+        self.assertEqual(len(result["top3"]), 3)
+        self.assertEqual(len(result["top5"]), 5)
+
+        from draw_game.classifier import load_labels
+        valid_labels = load_labels(labels_path)
+        self.assertIn(result["top1"], valid_labels)
+
+        # Print observed details for the report
+        print(f"\n[fused-smoke] input details:")
+        for d in clf.input_details:
+            print(f"  name={d['name']}  index={d['index']}  shape={d['shape'].tolist()}  dtype={d['dtype']}")
+        print(f"[fused-smoke] output shape: {clf.output_details[0]['shape'].tolist()}")
+        print(f"[fused-smoke] label count: {len(valid_labels)}")
+        print(f"[fused-smoke] top1={result['top1']}  confidence={result['confidence']:.4f}")
+        print(f"[fused-smoke] top3={result['top3']}")
+
