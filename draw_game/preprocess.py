@@ -312,11 +312,28 @@ def preprocess_strokes(
 
     content_slots = resolved_seq_len - 1  # last slot = end token
 
-    # Evenly subsample when there are too many points.
+    # Evenly subsample when there are too many points, preserving stroke ends.
     if len(flat) > content_slots:
-        indices = np.round(np.linspace(0, len(flat) - 1, content_slots)).astype(int)
-        indices[-1] = len(flat) - 1  # always include the last point
-        sampled: list[tuple[float, float, bool]] = [flat[i] for i in indices]
+        base_indices = set(np.round(np.linspace(0, len(flat) - 1, content_slots)).astype(int))
+        end_indices = {i for i, pt in enumerate(flat) if pt[2]}
+        combined = sorted(list(base_indices | end_indices))
+        
+        excess = len(combined) - content_slots
+        if excess > 0:
+            removable = [i for i in combined if i not in end_indices and i != 0]
+            if len(removable) >= excess:
+                drop_idx = set(np.round(np.linspace(0, len(removable) - 1, excess)).astype(int))
+                to_drop = {removable[i] for i in drop_idx}
+                combined = [i for i in combined if i not in to_drop]
+            else:
+                combined = combined[:content_slots]
+
+        sampled: list[tuple[float, float, bool]] = []
+        for i, idx in enumerate(combined):
+            x, y, is_end = flat[idx]
+            if i == len(combined) - 1:
+                is_end = True
+            sampled.append((x, y, is_end))
     else:
         sampled = flat
 

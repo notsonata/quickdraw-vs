@@ -149,11 +149,11 @@ class StrokePreprocessTests(unittest.TestCase):
         result = preprocess_strokes([eraser, pen])
         self.assertIsNotNone(result)
 
-    def test_output_shape_is_1_128_5(self):
+    def test_output_shape_is_1_256_5(self):
         stroke = _line_stroke(n=20)
-        result = preprocess_strokes([stroke], seq_len=128)
+        result = preprocess_strokes([stroke], seq_len=256)
         self.assertIsNotNone(result)
-        self.assertEqual(result.shape, (1, 128, 5))
+        self.assertEqual(result.shape, (1, 256, 5))
 
     def test_output_dtype_is_float32(self):
         stroke = _line_stroke(n=20)
@@ -162,20 +162,20 @@ class StrokePreprocessTests(unittest.TestCase):
 
     def test_end_token_is_present(self):
         stroke = _line_stroke(n=20)
-        result = preprocess_strokes([stroke], seq_len=128)
-        tensor = result[0]  # (128, 5)
+        result = preprocess_strokes([stroke], seq_len=256)
+        tensor = result[0]  # (256, 5)
         # Find end token: feature index 4 == 1.0
         end_positions = np.where(tensor[:, 4] == 1.0)[0]
         self.assertEqual(len(end_positions), 1, "Exactly one end token expected")
         end_pos = end_positions[0]
         # After end token, remaining slots must be all zeros
-        if end_pos < 127:
+        if end_pos < 255:
             self.assertTrue(np.all(tensor[end_pos + 1:] == 0.0))
 
     def test_pen_down_and_pen_up_are_mutually_exclusive(self):
         stroke = _line_stroke(n=30)
-        result = preprocess_strokes([stroke], seq_len=128)
-        tensor = result[0]  # (128, 5)
+        result = preprocess_strokes([stroke], seq_len=256)
+        tensor = result[0]  # (256, 5)
         pen_down = tensor[:, 2]
         pen_up = tensor[:, 3]
         end_flag = tensor[:, 4]
@@ -190,7 +190,7 @@ class StrokePreprocessTests(unittest.TestCase):
     def test_dx_dy_values_are_normalized_not_255_scale(self):
         """dx/dy should be small normalized deltas (~[-1, 1]), not pixel values."""
         stroke = _line_stroke(n=20, dx=0.01)
-        result = preprocess_strokes([stroke], seq_len=128)
+        result = preprocess_strokes([stroke], seq_len=256)
         tensor = result[0]
         # All dx values in content region should be around 0.01, not ~2.55
         content_dx = tensor[:20, 0]
@@ -201,7 +201,7 @@ class StrokePreprocessTests(unittest.TestCase):
 
     def test_last_point_of_stroke_has_pen_up(self):
         stroke = _line_stroke(n=10)
-        result = preprocess_strokes([stroke], seq_len=128)
+        result = preprocess_strokes([stroke], seq_len=256)
         tensor = result[0]
         # Content uses 10 slots (indices 0-9); end token at 10.
         # Index 9 is the last content point of the stroke → pen_up=1.
@@ -209,15 +209,15 @@ class StrokePreprocessTests(unittest.TestCase):
         self.assertEqual(tensor[9, 2], 0.0, "Last stroke point should have pen_down=0")
 
     def test_subsampling_preserves_shape_when_too_many_points(self):
-        # 300 points exceeds seq_len=128 content slots
+        # 300 points exceeds seq_len=256 content slots
         stroke = _line_stroke(n=300, dx=0.003)
-        result = preprocess_strokes([stroke], seq_len=128)
+        result = preprocess_strokes([stroke], seq_len=256)
         self.assertIsNotNone(result)
-        self.assertEqual(result.shape, (1, 128, 5))
+        self.assertEqual(result.shape, (1, 256, 5))
 
     def test_subsampled_output_still_has_end_token(self):
         stroke = _line_stroke(n=300, dx=0.003)
-        result = preprocess_strokes([stroke], seq_len=128)
+        result = preprocess_strokes([stroke], seq_len=256)
         tensor = result[0]
         end_positions = np.where(tensor[:, 4] == 1.0)[0]
         self.assertEqual(len(end_positions), 1)
@@ -225,7 +225,7 @@ class StrokePreprocessTests(unittest.TestCase):
     def test_two_strokes_produce_two_pen_up_events_before_end(self):
         s1 = _line_stroke(n=10)
         s2 = _line_stroke(n=10, x_start=0.5)
-        result = preprocess_strokes([s1, s2], seq_len=128)
+        result = preprocess_strokes([s1, s2], seq_len=256)
         tensor = result[0]
         # pen_up column: two 1.0 values before the end token, then 0.0
         end_pos = int(np.where(tensor[:, 4] == 1.0)[0][0])

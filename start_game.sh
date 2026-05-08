@@ -3,8 +3,20 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_PYTHON="$PROJECT_DIR/.venv/bin/python"
-MODEL_PATH="$PROJECT_DIR/draw_game/models/quickdraw_stroke_tflite/quickdraw_stroke_model_float32.tflite"
-LABELS_PATH="$PROJECT_DIR/draw_game/models/quickdraw_stroke_tflite/labels.json"
+ENV_FILE="$PROJECT_DIR/draw_game/.env"
+
+# Extract paths from .env if present
+if [[ -f "$ENV_FILE" ]]; then
+  ENV_MODEL=$(grep "^MODEL_PATH=" "$ENV_FILE" | cut -d'=' -f2 | sed "s/^'//;s/'$//;s/^\"//;s/\"$//")
+  ENV_LABELS=$(grep "^LABELS_PATH=" "$ENV_FILE" | cut -d'=' -f2 | sed "s/^'//;s/'$//;s/^\"//;s/\"$//")
+fi
+
+MODEL_PATH="${ENV_MODEL:-draw_game/models/quickdraw_stroke_tflite_export_15k_256/quickdraw_stroke_model_float32.tflite}"
+LABELS_PATH="${ENV_LABELS:-draw_game/models/quickdraw_stroke_tflite_export_15k_256/labels.json}"
+
+# Resolve relative paths against PROJECT_DIR
+if [[ ! "$MODEL_PATH" = /* ]]; then MODEL_PATH="$PROJECT_DIR/$MODEL_PATH"; fi
+if [[ ! "$LABELS_PATH" = /* ]]; then LABELS_PATH="$PROJECT_DIR/$LABELS_PATH"; fi
 
 cd "$PROJECT_DIR"
 

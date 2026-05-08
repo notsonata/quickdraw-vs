@@ -408,8 +408,8 @@ class StrokeModelClassifierTests(unittest.TestCase):
 
     def test_tflite_inference_smoke_stroke_model(self):
         """Smoke test against the real float32 stroke model if present."""
-        model_path = Path("draw_game/models/quickdraw_stroke_tflite/quickdraw_stroke_model_float32.tflite")
-        labels_path = Path("draw_game/models/quickdraw_stroke_tflite/labels.json")
+        model_path = Path("draw_game/models/quickdraw_stroke_tflite_export_15k_256/quickdraw_stroke_model_float32.tflite")
+        labels_path = Path("draw_game/models/quickdraw_stroke_tflite_export_15k_256/labels.json")
         if not model_path.exists() or not labels_path.exists():
             self.skipTest("Stroke TFLite model files not present")
 
@@ -419,7 +419,7 @@ class StrokeModelClassifierTests(unittest.TestCase):
             self.skipTest(f"TFLite interpreter unavailable: {exc}")
 
         # Minimal sequence: one horizontal stroke
-        x = np.zeros((1, 128, 5), dtype=np.float32)
+        x = np.zeros((1, 256, 5), dtype=np.float32)
         for t in range(10):
             x[0, t] = [0.01, 0.0, 1.0, 0.0, 0.0]  # pen down, small dx steps
         x[0, 10] = [0.0, 0.0, 0.0, 1.0, 0.0]       # pen up
