@@ -279,7 +279,22 @@ def _flatten_pen_events(stroke_events: list[dict]) -> list[tuple[float, float, b
         for idx, pt in enumerate(pts):
             is_stroke_end = idx == len(pts) - 1
             flat.append((float(pt[0]), float(pt[1]), is_stroke_end))
-    return flat
+            
+    if not flat:
+        return flat
+        
+    # Match Training Bounding-Box Normalization:
+    # Training code cropped drawings to their bounding box and scaled to 1.0.
+    xs = [pt[0] for pt in flat]
+    ys = [pt[1] for pt in flat]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    
+    max_dim = max(max_x - min_x, max_y - min_y)
+    max_dim = max(max_dim, 1e-4) # prevent division by zero
+    
+    normalized_flat = [((pt[0] - min_x) / max_dim, (pt[1] - min_y) / max_dim, pt[2]) for pt in flat]
+    return normalized_flat
 
 
 def preprocess_strokes(
@@ -312,28 +327,11 @@ def preprocess_strokes(
 
     content_slots = resolved_seq_len - 1  # last slot = end token
 
-    # Evenly subsample when there are too many points, preserving stroke ends.
+    # Match Training Logic: The training code DOES NOT subsample.
+    # It simply truncates the drawing at `max_len - 1` points.
+    # Subsampling completely distorts the dx/dy distances between points!
     if len(flat) > content_slots:
-        base_indices = set(np.round(np.linspace(0, len(flat) - 1, content_slots)).astype(int))
-        end_indices = {i for i, pt in enumerate(flat) if pt[2]}
-        combined = sorted(list(base_indices | end_indices))
-        
-        excess = len(combined) - content_slots
-        if excess > 0:
-            removable = [i for i in combined if i not in end_indices and i != 0]
-            if len(removable) >= excess:
-                drop_idx = set(np.round(np.linspace(0, len(removable) - 1, excess)).astype(int))
-                to_drop = {removable[i] for i in drop_idx}
-                combined = [i for i in combined if i not in to_drop]
-            else:
-                combined = combined[:content_slots]
-
-        sampled: list[tuple[float, float, bool]] = []
-        for i, idx in enumerate(combined):
-            x, y, is_end = flat[idx]
-            if i == len(combined) - 1:
-                is_end = True
-            sampled.append((x, y, is_end))
+        sampled = flat[:content_slots]
     else:
         sampled = flat
 
